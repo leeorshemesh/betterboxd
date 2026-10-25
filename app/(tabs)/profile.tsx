@@ -16,15 +16,14 @@ import { TimelineRow } from '@/components/TimelineRow';
 import { TopFive } from '@/components/TopFive';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
-import { CURRENT_USER_ID } from '@/data/mock/users';
 
 export default function ProfileScreen() {
   const listRef = useRef<FlatList>(null);
-  const { currentUser, friends, topFive, setTopFiveMode, getReviewsForUser, getUserComments } =
+  const { currentUser, friends, diary, topFive, setTopFiveMode, getReview, getUserComments } =
     useAppState();
 
-  const reviews = getReviewsForUser(CURRENT_USER_ID);
-  const myComments = getUserComments(CURRENT_USER_ID);
+  const myComments = getUserComments(currentUser.id);
+  const reviewCount = diary.filter((entry) => entry.reviewId).length;
 
   const scrollToTop = () => listRef.current?.scrollToOffset({ offset: 0, animated: true });
   const scrollToBottom = () =>
@@ -59,8 +58,8 @@ export default function ProfileScreen() {
               </Pressable>
             </Link>
             <View style={styles.stat}>
-              <Text style={styles.statNum}>{reviews.length}</Text>
-              <Text style={styles.statLabel}>Reviews</Text>
+              <Text style={styles.statNum}>{diary.length}</Text>
+              <Text style={styles.statLabel}>Logged</Text>
             </View>
           </View>
         </View>
@@ -70,7 +69,9 @@ export default function ProfileScreen() {
 
       <View style={styles.timelineHeader}>
         <Text style={styles.timelineTitle}>Timeline</Text>
-        <Text style={styles.timelineHint}>Newest first</Text>
+        <Text style={styles.timelineHint}>
+          {reviewCount === 1 ? '1 review' : `${reviewCount} reviews`} · newest first
+        </Text>
       </View>
     </View>
   );
@@ -79,20 +80,21 @@ export default function ProfileScreen() {
     <View style={styles.screen}>
       <FlatList
         ref={listRef}
-        data={reviews}
+        data={diary}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={Header}
         contentContainerStyle={styles.list}
         onScroll={(_e: NativeSyntheticEvent<NativeScrollEvent>) => {}}
         renderItem={({ item, index }) => (
           <TimelineRow
-            review={item}
+            entry={item}
+            review={item.reviewId ? getReview(item.reviewId) : undefined}
             isFirst={index === 0}
-            isLast={index === reviews.length - 1}
+            isLast={index === diary.length - 1}
           />
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No reviews yet — post one from the Add tab.</Text>
+          <Text style={styles.empty}>Nothing logged yet — add a title from the Add tab.</Text>
         }
       />
 

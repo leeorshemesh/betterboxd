@@ -1,32 +1,41 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, type Href } from 'expo-router';
 
 import { MediaArt } from '@/components/MediaArt';
 import { StarRating } from '@/components/StarRating';
 import { colors, spacing, typography } from '@/constants/theme';
-import { getMediaSync } from '@/services/mediaService';
-import type { Review } from '@/types';
-import { formatDateShort, mediaTargetLabel } from '@/utils/format';
+import type { DiaryEntry, Review } from '@/types';
+import { formatDayLabel, mediaTargetLabel } from '@/utils/format';
 
 interface TimelineRowProps {
-  review: Review;
+  entry: DiaryEntry;
+  review?: Review;
   isFirst?: boolean;
   isLast?: boolean;
 }
 
 /**
- * Profile timeline row: date left, vertical line, art + meta right.
+ * Profile timeline row: diary date left, vertical line, art + meta right.
  */
-export function TimelineRow({ review, isFirst, isLast }: TimelineRowProps) {
-  const media = getMediaSync(review.target.mediaId);
-  if (!media) return null;
-  const target = mediaTargetLabel(media, review);
+export function TimelineRow({ entry, review, isFirst, isLast }: TimelineRowProps) {
+  const media = entry.media;
+  const target = mediaTargetLabel(media, {
+    season: entry.season,
+    episode: entry.episode,
+    musicKind: entry.musicKind,
+  });
+  const rating = review?.rating ?? entry.rating;
+  const href = (
+    review || entry.reviewId
+      ? `/review/${review?.id ?? entry.reviewId}`
+      : `/media/${media.type}/${media.id}`
+  ) as Href;
 
   return (
-    <Link href={`/review/${review.id}`} asChild>
+    <Link href={href} asChild>
       <Pressable style={styles.row}>
         <View style={styles.left}>
-          <Text style={styles.date}>{formatDateShort(review.createdAt)}</Text>
+          <Text style={styles.date}>{formatDayLabel(entry.loggedOn)}</Text>
           <View style={styles.rail}>
             {!isFirst && <View style={styles.railTop} />}
             <View style={styles.dot} />
@@ -41,10 +50,14 @@ export function TimelineRow({ review, isFirst, isLast }: TimelineRowProps) {
               {media.title}
             </Text>
             {target ? <Text style={styles.target}>{target}</Text> : null}
-            <StarRating value={review.rating} size={14} />
-            <Text style={styles.interactions}>
-              {review.interactionCount} interaction{review.interactionCount === 1 ? '' : 's'}
-            </Text>
+            {rating != null ? <StarRating value={rating} size={14} /> : null}
+            {review ? (
+              <Text style={styles.interactions}>
+                {review.interactionCount} interaction{review.interactionCount === 1 ? '' : 's'}
+              </Text>
+            ) : (
+              <Text style={styles.interactions}>Logged</Text>
+            )}
           </View>
         </View>
       </Pressable>

@@ -1,6 +1,7 @@
 import { useLocalSearchParams, Link, Stack } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,34 +15,64 @@ import { MediaArt } from '@/components/MediaArt';
 import { StarRating } from '@/components/StarRating';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
-import { getUserById } from '@/data/mock/users';
+import { ApiError } from '@/services/api';
 import { getMediaSync } from '@/services/mediaService';
-import { formatDateYear, mediaTargetLabel } from '@/utils/format';
+import { formatDayLabel, mediaTargetLabel } from '@/utils/format';
 
 export default function ReviewDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getReview, getCommentsForReview, addComment } = useAppState();
+  const reviewId = Array.isArray(id) ? id[0] : id;
+  const { getReview, getCommentsForReview, addComment, loadReview, getUser } = useAppState();
   const [reply, setReply] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const review = getReview(id);
+  useEffect(() => {
+    if (!reviewId) return;
+    let cancelled = false;
+    setLoading(true);
+    loadReview(reviewId)
+      .then(() => {
+        if (!cancelled) setError(null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Could not load review');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewId, loadReview]);
+
+  const review = reviewId ? getReview(reviewId) : undefined;
+  if (loading && !review) {
+    return (
+      <View style={styles.screen}>
+        <ActivityIndicator color={colors.accent} style={{ marginTop: 48 }} />
+      </View>
+    );
+  }
   if (!review) {
     return (
       <View style={styles.screen}>
-        <Text style={styles.missing}>Review not found.</Text>
+        <Text style={styles.missing}>{error ?? 'Review not found.'}</Text>
       </View>
     );
   }
 
-  const user = getUserById(review.userId);
-  const media = getMediaSync(review.target.mediaId);
+  const user = review.author ?? getUser(review.userId);
+  const media = review.media ?? getMediaSync(review.target.mediaId);
   const comments = getCommentsForReview(review.id);
-  const target = media ? mediaTargetLabel(media, review) : '';
+  const target = media ? mediaTargetLabel(media, review.target) : '';
 
   const onReply = () => {
     const body = reply.trim();
     if (!body) return;
-    addComment(review.id, body);
-    setReply('');
+    void addComment(review.id, body).then(() => setReply('')).catch((err: unknown) => {
+      setError(err instanceof ApiError ? err.message : 'Could not post comment');
+    });
   };
 
   return (
@@ -53,9 +84,9 @@ export default function ReviewDetailScreen() {
             <Avatar user={user} size={44} />
             <View>
               <Text style={styles.authorName}>{user.displayName}</Text>
-              <Text style={styles.date}>{formatDateYear(review.createdAt)}</Text>
+              <Text style={styles.date}>{formatDayLabel(review.loggedOn ?? review.createdAt, true)}</Text>
               {!user.isPublic && (
-                <Text style={styles.privacy}>Private profile — friend-visible comments (mock)</Text>
+                <Text style={styles.privacy}>Private profile — comments are visible to friends.</Text>
               )}
             </View>
           </View>
@@ -94,7 +125,7 @@ export default function ReviewDetailScreen() {
         </Text>
 
         {comments.map((c) => {
-          const cu = getUserById(c.userId);
+          const cu = c.author ?? getUser(c.userId);
           return (
             <View key={c.id} style={styles.comment}>
               {cu && <Avatar user={cu} size={32} />}
@@ -102,7 +133,7 @@ export default function ReviewDetailScreen() {
                 <Text style={styles.commentMeta}>
                   <Text style={styles.commentName}>{cu?.displayName ?? 'User'}</Text>
                   {' · '}
-                  {formatDateYear(c.createdAt)}
+                  {formatDayLabel(c.createdAt, true)}
                 </Text>
                 <Text style={styles.commentBody}>{c.body}</Text>
                 {c.visibilityNote ? (
@@ -113,6 +144,7 @@ export default function ReviewDetailScreen() {
           );
         })}
 
+        {error ? <Text style={styles.privacy}>{error}</Text> : null}
         <View style={styles.replyBox}>
           <TextInput
             value={reply}

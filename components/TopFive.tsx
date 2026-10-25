@@ -72,7 +72,10 @@ export function TopFive({ config, onModeChange }: TopFiveProps) {
           );
         })}
       </ScrollView>
-      <Text style={styles.editHint}>Editable via mock state — picker stub for later.</Text>
+      {config.slots.length === 0 ? (
+        <Text style={styles.editHint}>No favorites pinned yet.</Text>
+      ) : null}
+      <Text style={styles.editHint}>Choosing favorites comes later. The mode is saved on your account.</Text>
     </View>
   );
 }

@@ -14,19 +14,25 @@ import { MediaArt } from '@/components/MediaArt';
 import { StarRating } from '@/components/StarRating';
 import { colors, radii, spacing, typography, MEDIA_TYPE_SINGULAR } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
-import { getUserById } from '@/data/mock/users';
+import { ApiError } from '@/services/api';
 import { mediaService } from '@/services/mediaService';
-import type { MediaItem, MediaType } from '@/types';
-import { formatDateShort } from '@/utils/format';
+import type { MediaItem } from '@/types';
+import { formatDayLabel } from '@/utils/format';
 
 export default function MediaDetailScreen() {
-  const { type, id } = useLocalSearchParams<{ type: string; id: string }>();
-  const { getPublicReviewsForMedia, addToList, lists } = useAppState();
+  const params = useLocalSearchParams<{ type: string; id: string }>();
+  const type = Array.isArray(params.type) ? params.type[0] : params.type;
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
+  const { getPublicReviewsForMedia, addToList, lists, loadMediaReviews } = useAppState();
   const [media, setMedia] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     mediaService.getById(id).then((item) => {
@@ -39,6 +45,11 @@ export default function MediaDetailScreen() {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!type || !id) return;
+    void loadMediaReviews(type, id);
+  }, [type, id, loadMediaReviews]);
 
   if (loading) {
     return (
@@ -63,13 +74,16 @@ export default function MediaDetailScreen() {
   const alreadyInList = list?.mediaIds.includes(media.id) ?? false;
 
   const onAddToList = () => {
-    const result = addToList(media.id, media.type as MediaType);
-    setToast(
-      result.added
-        ? `Added to ${result.list.name}`
-        : `Already on ${result.list.name}`,
-    );
-    setTimeout(() => setToast(null), 2000);
+    void addToList(media)
+      .then((result) => {
+        setToast(result.added ? `Added to ${result.list.name}` : `Already on ${result.list.name}`);
+      })
+      .catch((error: unknown) => {
+        setToast(error instanceof ApiError ? error.message : 'Could not update your list');
+      })
+      .finally(() => {
+        setTimeout(() => setToast(null), 2000);
+      });
   };
 
   return (
@@ -99,16 +113,16 @@ export default function MediaDetailScreen() {
         </Pressable>
         {toast ? <Text style={styles.toast}>{toast}</Text> : null}
 
-        <Text style={styles.section}>Public reviews · {reviews.length}</Text>
+        <Text style={styles.section}>Reviews · {reviews.length}</Text>
         <Text style={styles.sectionHint}>
-          Only authors with public profiles are shown (privacy enforced later).
+          Public profiles, plus friends with private profiles.
         </Text>
 
         {reviews.length === 0 ? (
-          <Text style={styles.empty}>No public reviews yet.</Text>
+          <Text style={styles.empty}>No reviews yet.</Text>
         ) : (
           reviews.map((r) => {
-            const author = getUserById(r.userId);
+            const author = r.author;
             return (
               <Link key={r.id} href={`/review/${r.id}`} asChild>
                 <Pressable style={styles.reviewRow}>
@@ -116,7 +130,7 @@ export default function MediaDetailScreen() {
                   <View style={{ flex: 1 }}>
                     <View style={styles.reviewTop}>
                       <Text style={styles.reviewAuthor}>{author?.displayName ?? 'User'}</Text>
-                      <Text style={styles.reviewDate}>{formatDateShort(r.createdAt)}</Text>
+                      <Text style={styles.reviewDate}>{formatDayLabel(r.loggedOn ?? r.createdAt)}</Text>
                     </View>
                     <StarRating value={r.rating} size={14} />
                     <Text style={styles.reviewBody} numberOfLines={3}>

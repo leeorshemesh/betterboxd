@@ -54,6 +54,38 @@ npx.cmd expo start --web
 
 `npm run android` or Expo Go on a device.
 
+## Account server
+
+Profiles, friends, diary entries, reviews, comments, lists, and Top Five are stored by a local API. Catalog search still runs in the app.
+
+Node 22 or newer. From the project root, in a second terminal:
+
+```bash
+npm run server
+```
+
+The API listens on `http://localhost:8787`. The SQLite file is `server/data/betterboxd.sqlite` and is gitignored.
+
+Set the app’s API address in `.env` (see [`.env.example`](.env.example)):
+
+```env
+EXPO_PUBLIC_API_URL=http://localhost:8787
+```
+
+- Web and the iOS simulator can use `localhost`.
+- Android emulator: `http://10.0.2.2:8787`
+- A physical phone on the same Wi‑Fi: `http://<your computer's LAN IP>:8787`
+
+Restart Expo after changing it (`npx expo start -c`).
+
+Dev seed accounts (local only, password `password` for each):
+
+- `maya_reels` / maya@betterboxd.local — public
+- `j.watches` / jordan@betterboxd.local — private
+- `samreads` / sam@betterboxd.local — public
+
+Maya and Jordan are friends, and Jordan and Sam are friends. Sign up in the app to create your own account, then send a friend request by username.
+
 ## Phase 1 scope
 
 Five tabs (Feed, Explore, Add, Community placeholder, Profile), review/media detail, mock catalog + social graph, `mediaService` ready for TMDB / Open Library / Spotify later.

@@ -14,14 +14,22 @@ import { MediaTypeIcon } from '@/components/MediaTypeIcon';
 import { StarRating } from '@/components/StarRating';
 import { colors, radii, spacing, typography, MEDIA_TYPE_SINGULAR } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
+import { ApiError } from '@/services/api';
 import { mediaService } from '@/services/mediaService';
 import type { MediaItem, MediaType, MusicTargetKind } from '@/types';
 
 const TYPES: MediaType[] = ['movie', 'show', 'book', 'music'];
 
+function today(): string {
+  const date = new Date();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 export default function AddScreen() {
   const router = useRouter();
-  const { addReview } = useAppState();
+  const { logTitle } = useAppState();
 
   const [mediaType, setMediaType] = useState<MediaType>('movie');
   const [query, setQuery] = useState('');
@@ -30,10 +38,12 @@ export default function AddScreen() {
   const [season, setSeason] = useState<number | undefined>();
   const [episode, setEpisode] = useState<number | undefined>();
   const [musicKind, setMusicKind] = useState<MusicTargetKind | undefined>();
+  const [loggedOn, setLoggedOn] = useState(today);
   const [rating, setRating] = useState(4);
   const [body, setBody] = useState('');
   const [tagText, setTagText] = useState('');
   const [posting, setPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -72,19 +82,22 @@ export default function AddScreen() {
     return Array.from({ length: selected.episodesPerSeason }, (_, i) => i + 1);
   }, [selected, season]);
 
-  const canPost =
-    !!selected && rating >= 0.5 && body.trim().length > 0 && !posting;
+  const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(loggedOn);
+  const canLog = !!selected && dateValid && !posting;
+  const canReview = canLog && body.trim().length > 0;
 
-  const onPost = () => {
-    if (!selected || !canPost) return;
+  const onSubmit = async (withReview: boolean) => {
+    if (!selected || !canLog) return;
+    if (withReview && !canReview) return;
     setPosting(true);
+    setError(null);
     try {
-      const review = addReview({
-        mediaId: selected.id,
-        mediaType: selected.type,
+      const result = await logTitle({
+        media: selected,
+        loggedOn,
         rating,
-        body: body.trim(),
-        tags,
+        body: withReview ? body.trim() : undefined,
+        tags: withReview ? tags : [],
         season,
         episode,
         musicKind: selected.type === 'music' ? musicKind ?? selected.musicKind : undefined,
@@ -93,7 +106,11 @@ export default function AddScreen() {
       setTagText('');
       setSelected(null);
       setRating(4);
-      router.push(`/review/${review.id}`);
+      setLoggedOn(today());
+      if (result.review) router.push(`/review/${result.review.id}`);
+      else router.push(`/media/${selected.type}/${selected.id}`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save');
     } finally {
       setPosting(false);
     }
@@ -101,8 +118,8 @@ export default function AddScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.heading}>Log a review</Text>
-      <Text style={styles.sub}>Pick a type, find the title, rate it, write it up.</Text>
+      <Text style={styles.heading}>Log a title</Text>
+      <Text style={styles.sub}>Pick a title and the day. A written review is optional.</Text>
 
       <Text style={styles.label}>Media type</Text>
       <View style={styles.typeRow}>
@@ -235,6 +252,17 @@ export default function AddScreen() {
         </>
       )}
 
+      <Text style={styles.label}>Date</Text>
+      <TextInput
+        value={loggedOn}
+        onChangeText={setLoggedOn}
+        placeholder="YYYY-MM-DD"
+        placeholderTextColor={colors.textMuted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={styles.input}
+      />
+
       <Text style={styles.label}>Rating</Text>
       <StarRating value={rating} onChange={setRating} size={32} showValue />
 
@@ -262,10 +290,19 @@ export default function AddScreen() {
         <Text style={styles.tagPreview}>{tags.map((t) => `#${t}`).join('  ')}</Text>
       )}
 
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
       <Pressable
-        onPress={onPost}
-        disabled={!canPost}
-        style={[styles.postBtn, !canPost && styles.postBtnDisabled]}
+        onPress={() => void onSubmit(false)}
+        disabled={!canLog}
+        style={[styles.secondaryBtn, !canLog && styles.postBtnDisabled]}
+      >
+        <Text style={styles.secondaryText}>{posting ? 'Saving…' : 'Log without review'}</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => void onSubmit(true)}
+        disabled={!canReview}
+        style={[styles.postBtn, !canReview && styles.postBtnDisabled]}
       >
         <Text style={styles.postText}>{posting ? 'Posting…' : 'Post review'}</Text>
       </Pressable>
@@ -354,6 +391,17 @@ const styles = StyleSheet.create({
   },
   smallChipText: { ...typography.caption, color: colors.text },
   tagPreview: { ...typography.caption, color: colors.teal, marginTop: spacing.sm },
+  error: { ...typography.body, color: colors.coral, marginTop: spacing.md },
+  secondaryBtn: {
+    marginTop: spacing.xl,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryText: { ...typography.bodyBold, color: colors.text, fontSize: 16 },
   postBtn: {
     marginTop: spacing.xl,
     backgroundColor: colors.accent,

@@ -3,13 +3,11 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, spacing, typography } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
-import { getMediaSync } from '@/services/mediaService';
-import { CURRENT_USER_ID } from '@/data/mock/users';
-import { formatDateYear } from '@/utils/format';
+import { formatDayLabel } from '@/utils/format';
 
 export default function MyCommentsScreen() {
-  const { getUserComments, getReview } = useAppState();
-  const comments = getUserComments(CURRENT_USER_ID);
+  const { getUserComments, getReview, currentUser } = useAppState();
+  const comments = getUserComments(currentUser.id);
 
   return (
     <FlatList
@@ -22,13 +20,13 @@ export default function MyCommentsScreen() {
       }
       renderItem={({ item }) => {
         const review = getReview(item.reviewId);
-        const media = review ? getMediaSync(review.target.mediaId) : undefined;
+        const title = item.mediaTitle ?? review?.media?.title ?? 'a review';
         return (
           <Link href={`/review/${item.reviewId}`} asChild>
             <Pressable style={styles.row}>
-              <Text style={styles.date}>{formatDateYear(item.createdAt)}</Text>
+              <Text style={styles.date}>{formatDayLabel(item.createdAt, true)}</Text>
               <Text style={styles.on}>
-                On {media?.title ?? 'a review'}
+                On {title}
               </Text>
               <Text style={styles.body}>{item.body}</Text>
             </Pressable>

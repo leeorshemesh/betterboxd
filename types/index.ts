@@ -32,6 +32,34 @@ export interface User {
   bio?: string;
   isPublic: boolean;
   friendIds: string[];
+  /** Present on the signed-in account only. */
+  email?: string;
+}
+
+export type FriendStatus = 'none' | 'pending_outgoing' | 'pending_incoming' | 'friends' | 'self';
+
+export interface FriendRequest {
+  id: string;
+  user: User;
+  createdAt: string;
+}
+
+export interface UserSearchHit {
+  user: User;
+  friendStatus: FriendStatus;
+}
+
+export interface DiaryEntry {
+  id: string;
+  userId: string;
+  media: MediaItem;
+  loggedOn: string;
+  season?: number;
+  episode?: number;
+  musicKind?: MusicTargetKind;
+  rating?: number;
+  createdAt: string;
+  reviewId?: string;
 }
 
 export interface ReviewTarget {
@@ -46,12 +74,17 @@ export interface ReviewTarget {
 export interface Review {
   id: string;
   userId: string;
+  diaryEntryId?: string;
   target: ReviewTarget;
   mediaType: MediaType;
+  media?: MediaItem;
+  author?: User;
   rating: number; // 0.5–5 in half-star steps
   body: string;
   tags: string[];
   createdAt: string; // ISO
+  /** Diary date (YYYY-MM-DD) when this review was logged. */
+  loggedOn?: string;
   interactionCount: number;
 }
 
@@ -61,6 +94,8 @@ export interface Comment {
   userId: string;
   body: string;
   createdAt: string;
+  author?: User;
+  mediaTitle?: string;
   /** Visible when the review author's profile is public, or to friends when private */
   visibilityNote?: string;
 }

@@ -5,8 +5,8 @@ import { Avatar } from '@/components/Avatar';
 import { MediaArt } from '@/components/MediaArt';
 import { StarRating } from '@/components/StarRating';
 import { colors, spacing, typography } from '@/constants/theme';
+import { useAppState } from '@/context/AppState';
 import { getMediaSync } from '@/services/mediaService';
-import { getUserById } from '@/data/mock/users';
 import type { Comment, FeedActivity, Review } from '@/types';
 import { formatDateShort, mediaTargetLabel } from '@/utils/format';
 
@@ -17,11 +17,14 @@ interface FeedItemProps {
 }
 
 export function FeedItem({ activity, review, comment }: FeedItemProps) {
-  const user = getUserById(activity.userId);
-  const media = getMediaSync(review.target.mediaId);
+  const { getUser } = useAppState();
+  const user =
+    getUser(activity.userId) ??
+    (activity.userId === review.userId ? review.author : comment?.author);
+  const media = review.media ?? getMediaSync(review.target.mediaId);
   if (!user || !media) return null;
 
-  const target = mediaTargetLabel(media, review);
+  const target = mediaTargetLabel(media, review.target);
   const isComment = activity.kind === 'comment';
 
   return (

@@ -2,25 +2,23 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { mockComments } from '@/data/mock/comments';
-import { mockLists } from '@/data/mock/lists';
-import { mockReviews } from '@/data/mock/reviews';
-import {
-  CURRENT_USER_ID,
-  defaultTopFive,
-  getFriends,
-  getUserById,
-  topFiveByType,
-} from '@/data/mock/users';
+import { colors, radii, spacing, typography } from '@/constants/theme';
+import { useAuth } from '@/context/Auth';
+import { api, ApiError } from '@/services/api';
 import type {
   Comment,
+  DiaryEntry,
   FeedActivity,
   FeedFilter,
+  FriendRequest,
+  MediaItem,
   MediaList,
   MediaType,
   MusicTargetKind,
@@ -28,30 +26,63 @@ import type {
   TopFiveConfig,
   TopFiveMode,
   User,
+  UserSearchHit,
 } from '@/types';
 
-export interface NewReviewInput {
-  mediaId: string;
-  mediaType: MediaType;
-  rating: number;
-  body: string;
+export interface NewLogInput {
+  media: MediaItem;
+  loggedOn: string;
+  rating?: number;
+  body?: string;
   tags: string[];
   season?: number;
   episode?: number;
   musicKind?: MusicTargetKind;
 }
 
+interface AccountPayload {
+  user: User;
+  friends: User[];
+  incomingRequests: FriendRequest[];
+  outgoingRequests: FriendRequest[];
+  lists: MediaList[];
+  topFive: TopFiveConfig;
+}
+
+interface DiaryPayload {
+  entries: DiaryEntry[];
+  reviews: Review[];
+}
+
+interface FeedPayload {
+  activities: FeedActivity[];
+  reviews: Review[];
+  comments: Comment[];
+}
+
 interface AppStateValue {
   currentUser: User;
   friends: User[];
+  incomingRequests: FriendRequest[];
+  outgoingRequests: FriendRequest[];
+  diary: DiaryEntry[];
   reviews: Review[];
   comments: Comment[];
   lists: MediaList[];
   topFive: TopFiveConfig;
   setTopFiveMode: (mode: TopFiveMode) => void;
-  addReview: (input: NewReviewInput) => Review;
-  addComment: (reviewId: string, body: string) => Comment;
-  addToList: (mediaId: string, mediaType: MediaType) => { list: MediaList; added: boolean };
+  logTitle: (input: NewLogInput) => Promise<{ entry: DiaryEntry; review: Review | null }>;
+  addComment: (reviewId: string, body: string) => Promise<Comment>;
+  addToList: (media: MediaItem) => Promise<{ list: MediaList; added: boolean }>;
+  updateProfile: (patch: { displayName?: string; bio?: string; isPublic?: boolean }) => Promise<void>;
+  searchUsers: (query: string) => Promise<UserSearchHit[]>;
+  sendFriendRequest: (username: string) => Promise<void>;
+  acceptFriendRequest: (id: string) => Promise<void>;
+  declineFriendRequest: (id: string) => Promise<void>;
+  removeFriend: (userId: string) => Promise<void>;
+  loadReview: (id: string) => Promise<void>;
+  loadMediaReviews: (type: string, mediaId: string) => Promise<void>;
+  getUser: (id: string) => User | undefined;
   getReview: (id: string) => Review | undefined;
   getCommentsForReview: (reviewId: string) => Comment[];
   getReviewsForUser: (userId: string) => Review[];
@@ -62,131 +93,254 @@ interface AppStateValue {
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
-function buildFeed(reviews: Review[], comments: Comment[], friendIds: string[]): FeedActivity[] {
-  const friendSet = new Set(friendIds);
-  const activities: FeedActivity[] = [];
+function byLoggedOn(a: DiaryEntry, b: DiaryEntry): number {
+  const day = b.loggedOn.localeCompare(a.loggedOn);
+  if (day !== 0) return day;
+  return b.createdAt.localeCompare(a.createdAt);
+}
 
-  for (const r of reviews) {
-    if (!friendSet.has(r.userId) && r.userId !== CURRENT_USER_ID) continue;
-    // Feed is friend-scoped; include friends' reviews (not own)
-    if (!friendSet.has(r.userId)) continue;
-    activities.push({
-      id: `feed-rev-${r.id}`,
-      kind: 'review',
-      userId: r.userId,
-      reviewId: r.id,
-      mediaType: r.mediaType,
-      createdAt: r.createdAt,
-    });
+function mergeById<T extends { id: string }>(current: T[], incoming: T[]): T[] {
+  const map = new Map(current.map((item) => [item.id, item]));
+  for (const item of incoming) map.set(item.id, item);
+  return [...map.values()];
+}
+
+function rememberUsers(current: User[], incoming: Array<User | undefined>): User[] {
+  const map = new Map(current.map((user) => [user.id, user]));
+  for (const user of incoming) {
+    if (!user) continue;
+    const existing = map.get(user.id);
+    map.set(
+      user.id,
+      existing
+        ? {
+            ...existing,
+            ...user,
+            friendIds: user.friendIds.length > 0 ? user.friendIds : existing.friendIds,
+          }
+        : user,
+    );
   }
-
-  for (const c of comments) {
-    const review = reviews.find((r) => r.id === c.reviewId);
-    if (!review) continue;
-    if (!friendSet.has(c.userId)) continue;
-    activities.push({
-      id: `feed-cmt-${c.id}`,
-      kind: 'comment',
-      userId: c.userId,
-      reviewId: c.reviewId,
-      commentId: c.id,
-      mediaType: review.mediaType,
-      createdAt: c.createdAt,
-    });
-  }
-
-  return activities.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return [...map.values()];
 }
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const currentUser = getUserById(CURRENT_USER_ID)!;
-  const friends = getFriends(CURRENT_USER_ID);
+  const { signOut } = useAuth();
+  const [attempt, setAttempt] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [friends, setFriends] = useState<User[]>([]);
+  const [incomingRequests, setIncomingRequests] = useState<FriendRequest[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<FriendRequest[]>([]);
+  const [diary, setDiary] = useState<DiaryEntry[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [lists, setLists] = useState<MediaList[]>([]);
+  const [topFive, setTopFive] = useState<TopFiveConfig>({ mode: 'mixed', slots: [] });
+  const [activities, setActivities] = useState<FeedActivity[]>([]);
+  const [directory, setDirectory] = useState<User[]>([]);
 
-  const [reviews, setReviews] = useState<Review[]>(() => [...mockReviews]);
-  const [comments, setComments] = useState<Comment[]>(() => [...mockComments]);
-  const [lists, setLists] = useState<MediaList[]>(() =>
-    mockLists.map((l) => ({ ...l, mediaIds: [...l.mediaIds] })),
-  );
-  const [topFive, setTopFive] = useState<TopFiveConfig>(() => ({
-    ...defaultTopFive,
-    slots: [...defaultTopFive.slots],
-  }));
-
-  const setTopFiveMode = useCallback((mode: TopFiveMode) => {
-    if (mode === 'mixed') {
-      setTopFive({ ...defaultTopFive, slots: [...defaultTopFive.slots] });
-    } else {
-      const config = topFiveByType[mode];
-      setTopFive({ ...config, slots: [...config.slots] });
-    }
+  const applyAccount = useCallback((account: AccountPayload) => {
+    setCurrentUser(account.user);
+    setFriends(account.friends);
+    setIncomingRequests(account.incomingRequests);
+    setOutgoingRequests(account.outgoingRequests);
+    setLists(account.lists);
+    setTopFive(account.topFive);
+    setDirectory((prev) => rememberUsers(prev, [account.user, ...account.friends]));
   }, []);
 
-  const addReview = useCallback((input: NewReviewInput): Review => {
-    const review: Review = {
-      id: `rev-local-${Date.now()}`,
-      userId: CURRENT_USER_ID,
-      target: {
-        mediaId: input.mediaId,
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    setLoadError(null);
+    (async () => {
+      try {
+        const [account, diaryPayload, feedPayload, mine] = await Promise.all([
+          api<AccountPayload>('/auth/me'),
+          api<DiaryPayload>('/diary'),
+          api<FeedPayload>('/feed'),
+          api<{ comments: Comment[] }>('/me/comments'),
+        ]);
+        if (cancelled) return;
+        applyAccount(account);
+        setDiary([...diaryPayload.entries].sort(byLoggedOn));
+        setReviews(mergeById(diaryPayload.reviews, feedPayload.reviews));
+        setComments(mergeById(mine.comments, feedPayload.comments));
+        setActivities(feedPayload.activities);
+        setDirectory((prev) =>
+          rememberUsers(prev, [
+            account.user,
+            ...account.friends,
+            ...diaryPayload.reviews.map((review) => review.author),
+            ...feedPayload.reviews.map((review) => review.author),
+            ...mine.comments.map((comment) => comment.author),
+            ...feedPayload.comments.map((comment) => comment.author),
+          ]),
+        );
+        setReady(true);
+      } catch (error) {
+        if (cancelled) return;
+        if (error instanceof ApiError && error.status === 401) {
+          await signOut();
+          return;
+        }
+        setLoadError(error instanceof Error ? error.message : 'Could not load your account');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt, applyAccount, signOut]);
+
+  const reloadAccount = useCallback(async () => {
+    applyAccount(await api<AccountPayload>('/auth/me'));
+  }, [applyAccount]);
+
+  const setTopFiveMode = useCallback((mode: TopFiveMode) => {
+    setTopFive((prev) => ({ ...prev, mode }));
+    void api<{ topFive: TopFiveConfig }>('/top-five', { method: 'PATCH', body: { mode } })
+      .then((result) => setTopFive(result.topFive))
+      .catch(() => undefined);
+  }, []);
+
+  const logTitle = useCallback(async (input: NewLogInput) => {
+    const body = input.body?.trim();
+    const result = await api<{ entry: DiaryEntry; review: Review | null }>('/diary', {
+      method: 'POST',
+      body: {
+        media: input.media,
+        loggedOn: input.loggedOn,
         season: input.season,
         episode: input.episode,
         musicKind: input.musicKind,
+        rating: input.rating,
+        review: body
+          ? { body, tags: input.tags, rating: input.rating }
+          : undefined,
       },
-      mediaType: input.mediaType,
-      rating: input.rating,
-      body: input.body,
-      tags: input.tags,
-      createdAt: new Date().toISOString(),
-      interactionCount: 0,
-    };
-    setReviews((prev) => [review, ...prev]);
-    return review;
+    });
+    setDiary((prev) =>
+      [result.entry, ...prev.filter((entry) => entry.id !== result.entry.id)].sort(byLoggedOn),
+    );
+    if (result.review) {
+      setReviews((prev) => mergeById(prev, [result.review!]));
+      setDirectory((prev) => rememberUsers(prev, [result.review?.author]));
+    }
+    return result;
   }, []);
 
-  const addComment = useCallback((reviewId: string, body: string): Comment => {
-    const comment: Comment = {
-      id: `cmt-local-${Date.now()}`,
-      reviewId,
-      userId: CURRENT_USER_ID,
-      body,
-      createdAt: new Date().toISOString(),
-    };
-    setComments((prev) => [...prev, comment]);
+  const addComment = useCallback(async (reviewId: string, body: string) => {
+    const result = await api<{ comment: Comment }>(`/reviews/${reviewId}/comments`, {
+      method: 'POST',
+      body: { body },
+    });
+    setComments((prev) => mergeById(prev, [result.comment]));
     setReviews((prev) =>
-      prev.map((r) =>
-        r.id === reviewId ? { ...r, interactionCount: r.interactionCount + 1 } : r,
+      prev.map((review) =>
+        review.id === reviewId
+          ? { ...review, interactionCount: review.interactionCount + 1 }
+          : review,
       ),
     );
-    return comment;
+    setDirectory((prev) => rememberUsers(prev, [result.comment.author]));
+    return result.comment;
   }, []);
 
-  const addToList = useCallback(
-    (mediaId: string, mediaType: MediaType): { list: MediaList; added: boolean } => {
-      const kind =
-        mediaType === 'book' ? 'to-read' : mediaType === 'music' ? 'to-listen' : 'to-watch';
+  const addToList = useCallback(async (media: MediaItem) => {
+    const result = await api<{ list: MediaList; added: boolean }>('/lists/items', {
+      method: 'POST',
+      body: { media },
+    });
+    setLists((prev) => prev.map((list) => (list.id === result.list.id ? result.list : list)));
+    return result;
+  }, []);
 
-      const list = lists.find((l) => l.userId === CURRENT_USER_ID && l.kind === kind);
-      if (!list) {
-        return { list: lists[0], added: false };
-      }
-      if (list.mediaIds.includes(mediaId)) {
-        return { list, added: false };
-      }
-      const updated = { ...list, mediaIds: [...list.mediaIds, mediaId] };
-      setLists((prev) => prev.map((l) => (l.id === list.id ? updated : l)));
-      return { list: updated, added: true };
+  const updateProfile = useCallback(
+    async (patch: { displayName?: string; bio?: string; isPublic?: boolean }) => {
+      applyAccount(await api<AccountPayload>('/users/me', { method: 'PATCH', body: patch }));
     },
-    [lists],
+    [applyAccount],
   );
 
-  const getReview = useCallback(
-    (id: string) => reviews.find((r) => r.id === id),
-    [reviews],
+  const searchUsers = useCallback(async (query: string) => {
+    const result = await api<{ results: UserSearchHit[] }>(
+      `/users/search?q=${encodeURIComponent(query)}`,
+    );
+    setDirectory((prev) => rememberUsers(prev, result.results.map((hit) => hit.user)));
+    return result.results;
+  }, []);
+
+  const sendFriendRequest = useCallback(
+    async (username: string) => {
+      await api('/friends/requests', { method: 'POST', body: { username } });
+      await reloadAccount();
+    },
+    [reloadAccount],
   );
+
+  const acceptFriendRequest = useCallback(
+    async (id: string) => {
+      await api(`/friends/requests/${id}/accept`, { method: 'POST' });
+      await reloadAccount();
+    },
+    [reloadAccount],
+  );
+
+  const declineFriendRequest = useCallback(
+    async (id: string) => {
+      await api(`/friends/requests/${id}/decline`, { method: 'POST' });
+      await reloadAccount();
+    },
+    [reloadAccount],
+  );
+
+  const removeFriend = useCallback(
+    async (userId: string) => {
+      await api(`/friends/${userId}`, { method: 'DELETE' });
+      await reloadAccount();
+    },
+    [reloadAccount],
+  );
+
+  const loadReview = useCallback(async (id: string) => {
+    const result = await api<{ review: Review; comments: Comment[] }>(`/reviews/${id}`);
+    setReviews((prev) => mergeById(prev, [result.review]));
+    setComments((prev) => [
+      ...prev.filter((comment) => comment.reviewId !== id),
+      ...result.comments,
+    ]);
+    setDirectory((prev) =>
+      rememberUsers(prev, [result.review.author, ...result.comments.map((comment) => comment.author)]),
+    );
+  }, []);
+
+  const loadMediaReviews = useCallback(async (type: string, mediaId: string) => {
+    const result = await api<{ reviews: Review[] }>(
+      `/media/${encodeURIComponent(type)}/${encodeURIComponent(mediaId)}/reviews`,
+    );
+    setReviews((prev) => [
+      ...prev.filter((review) => review.target.mediaId !== mediaId),
+      ...result.reviews,
+    ]);
+    setDirectory((prev) => rememberUsers(prev, result.reviews.map((review) => review.author)));
+  }, []);
+
+  const getUser = useCallback(
+    (id: string) => {
+      if (currentUser?.id === id) return currentUser;
+      return directory.find((user) => user.id === id);
+    },
+    [currentUser, directory],
+  );
+
+  const getReview = useCallback((id: string) => reviews.find((review) => review.id === id), [reviews]);
 
   const getCommentsForReview = useCallback(
     (reviewId: string) =>
       comments
-        .filter((c) => c.reviewId === reviewId)
+        .filter((comment) => comment.reviewId === reviewId)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [comments],
   );
@@ -194,7 +348,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const getReviewsForUser = useCallback(
     (userId: string) =>
       reviews
-        .filter((r) => r.userId === userId)
+        .filter((review) => review.userId === userId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [reviews],
   );
@@ -202,70 +356,107 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const getPublicReviewsForMedia = useCallback(
     (mediaId: string) =>
       reviews
-        .filter((r) => {
-          if (r.target.mediaId !== mediaId) return false;
-          const author = getUserById(r.userId);
-          return author?.isPublic !== false;
-        })
+        .filter((review) => review.target.mediaId === mediaId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [reviews],
   );
 
   const getFeed = useCallback(
     (filter: FeedFilter) => {
-      const activities = buildFeed(reviews, comments, currentUser.friendIds);
       if (filter === 'all') return activities;
-      return activities.filter((a) => a.mediaType === filter);
+      return activities.filter((activity) => activity.mediaType === filter);
     },
-    [reviews, comments, currentUser.friendIds],
+    [activities],
   );
 
   const getUserComments = useCallback(
-    (userId: string = CURRENT_USER_ID) =>
+    (userId?: string) =>
       comments
-        .filter((c) => c.userId === userId)
+        .filter((comment) => comment.userId === (userId ?? currentUser?.id))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [comments],
+    [comments, currentUser?.id],
   );
 
-  const value = useMemo<AppStateValue>(
-    () => ({
+  const value = useMemo<AppStateValue | null>(() => {
+    if (!currentUser) return null;
+    return {
       currentUser,
       friends,
+      incomingRequests,
+      outgoingRequests,
+      diary,
       reviews,
       comments,
       lists,
       topFive,
       setTopFiveMode,
-      addReview,
+      logTitle,
       addComment,
       addToList,
+      updateProfile,
+      searchUsers,
+      sendFriendRequest,
+      acceptFriendRequest,
+      declineFriendRequest,
+      removeFriend,
+      loadReview,
+      loadMediaReviews,
+      getUser,
       getReview,
       getCommentsForReview,
       getReviewsForUser,
       getPublicReviewsForMedia,
       getFeed,
       getUserComments,
-    }),
-    [
-      currentUser,
-      friends,
-      reviews,
-      comments,
-      lists,
-      topFive,
-      setTopFiveMode,
-      addReview,
-      addComment,
-      addToList,
-      getReview,
-      getCommentsForReview,
-      getReviewsForUser,
-      getPublicReviewsForMedia,
-      getFeed,
-      getUserComments,
-    ],
-  );
+    };
+  }, [
+    currentUser,
+    friends,
+    incomingRequests,
+    outgoingRequests,
+    diary,
+    reviews,
+    comments,
+    lists,
+    topFive,
+    setTopFiveMode,
+    logTitle,
+    addComment,
+    addToList,
+    updateProfile,
+    searchUsers,
+    sendFriendRequest,
+    acceptFriendRequest,
+    declineFriendRequest,
+    removeFriend,
+    loadReview,
+    loadMediaReviews,
+    getUser,
+    getReview,
+    getCommentsForReview,
+    getReviewsForUser,
+    getPublicReviewsForMedia,
+    getFeed,
+    getUserComments,
+  ]);
+
+  if (!ready || !value) {
+    return (
+      <View style={styles.gate}>
+        {loadError ? (
+          <>
+            <Text style={styles.errorTitle}>Couldn’t load your account</Text>
+            <Text style={styles.errorBody}>{loadError}</Text>
+            <Pressable style={styles.retry} onPress={() => setAttempt((n) => n + 1)}>
+              <Text style={styles.retryText}>Try again</Text>
+            </Pressable>
+          </>
+        ) : (
+          <ActivityIndicator color={colors.accent} />
+        )}
+      </View>
+    );
+  }
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
@@ -275,3 +466,24 @@ export function useAppState(): AppStateValue {
   if (!ctx) throw new Error('useAppState must be used within AppStateProvider');
   return ctx;
 }
+
+const styles = StyleSheet.create({
+  gate: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  errorTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
+  errorBody: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
+  retry: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.accent,
+    borderRadius: radii.md,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  retryText: { ...typography.bodyBold, color: colors.bg },
+});
