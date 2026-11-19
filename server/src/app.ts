@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
+import { catalogRoutes } from './catalog/routes.js';
+import { corsOrigins } from './env.js';
 import { HttpError, nowPlusDays } from './http.js';
 import { hashPassword, newSessionToken, verifyPassword } from './passwords.js';
+import { rateLimit } from './rateLimit.js';
 import * as repo from './repos.js';
 import {
   colorFor,
@@ -31,10 +34,15 @@ type Env = { Variables: { userId: string; token: string } };
 
 export const app = new Hono<Env>();
 
+const allowedOrigins = corsOrigins();
+
 app.use(
   '*',
   cors({
-    origin: '*',
+    origin: (origin) => {
+      if (!origin) return allowedOrigins[0] ?? '*';
+      return allowedOrigins.includes(origin) ? origin : null;
+    },
     allowHeaders: ['Authorization', 'Content-Type'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 86400,
@@ -67,6 +75,17 @@ function requireToken(c: { get: (key: 'token') => string | undefined }): string 
 }
 
 app.get('/health', (c) => c.json({ ok: true }));
+
+app.use(
+  '/auth/register',
+  rateLimit({ limit: 10, windowMs: 60_000, keySuffix: 'auth-register' }),
+);
+app.use(
+  '/auth/login',
+  rateLimit({ limit: 20, windowMs: 60_000, keySuffix: 'auth-login' }),
+);
+
+app.route('/catalog', catalogRoutes);
 
 app.post('/auth/register', async (c) => {
   const body = await readJson(c.req.raw);

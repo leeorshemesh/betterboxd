@@ -38,6 +38,9 @@ yarn-error.*
 server/data/*.sqlite
 server/data/*.sqlite-*
 
+# Expo web export served by the API (one-host deploy)
+server/public/
+
 # typescript
 *.tsbuildinfo
 

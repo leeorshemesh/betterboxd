@@ -1,6 +1,11 @@
 import { getToken } from '@/services/session';
 
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8787').replace(/\/$/, '');
+/** Empty string = same origin (one-host showcase). Default local API for Expo Go / `npm run web`. */
+export const API_URL = (
+  process.env.EXPO_PUBLIC_API_URL === undefined
+    ? 'http://localhost:8787'
+    : process.env.EXPO_PUBLIC_API_URL
+).replace(/\/$/, '');
 
 export class ApiError extends Error {
   status: number;

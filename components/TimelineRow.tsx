@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Link, type Href } from 'expo-router';
 
 import { MediaArt } from '@/components/MediaArt';
@@ -12,12 +12,13 @@ interface TimelineRowProps {
   review?: Review;
   isFirst?: boolean;
   isLast?: boolean;
+  onDelete?: (entryId: string) => void;
 }
 
 /**
  * Profile timeline row: diary date left, vertical line, art + meta right.
  */
-export function TimelineRow({ entry, review, isFirst, isLast }: TimelineRowProps) {
+export function TimelineRow({ entry, review, isFirst, isLast, onDelete }: TimelineRowProps) {
   const media = entry.media;
   const target = mediaTargetLabel(media, {
     season: entry.season,
@@ -31,45 +32,65 @@ export function TimelineRow({ entry, review, isFirst, isLast }: TimelineRowProps
       : `/media/${media.type}/${media.id}`
   ) as Href;
 
-  return (
-    <Link href={href} asChild>
-      <Pressable style={styles.row}>
-        <View style={styles.left}>
-          <Text style={styles.date}>{formatDayLabel(entry.loggedOn)}</Text>
-          <View style={styles.rail}>
-            {!isFirst && <View style={styles.railTop} />}
-            <View style={styles.dot} />
-            {!isLast && <View style={styles.railBottom} />}
-          </View>
-        </View>
+  const confirmDelete = () => {
+    if (!onDelete) return;
+    Alert.alert('Delete log', `Remove “${media.title}” from your diary?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => onDelete(entry.id) },
+    ]);
+  };
 
-        <View style={styles.right}>
-          <MediaArt media={media} size={64} />
-          <View style={styles.meta}>
-            <Text style={styles.title} numberOfLines={2}>
-              {media.title}
-            </Text>
-            {target ? <Text style={styles.target}>{target}</Text> : null}
-            {rating != null ? <StarRating value={rating} size={14} /> : null}
-            {review ? (
-              <Text style={styles.interactions}>
-                {review.interactionCount} interaction{review.interactionCount === 1 ? '' : 's'}
-              </Text>
-            ) : (
-              <Text style={styles.interactions}>Logged</Text>
-            )}
+  return (
+    <View style={styles.row}>
+      <Link href={href} asChild>
+        <Pressable style={styles.rowMain}>
+          <View style={styles.left}>
+            <Text style={styles.date}>{formatDayLabel(entry.loggedOn)}</Text>
+            <View style={styles.rail}>
+              {!isFirst && <View style={styles.railTop} />}
+              <View style={styles.dot} />
+              {!isLast && <View style={styles.railBottom} />}
+            </View>
           </View>
-        </View>
-      </Pressable>
-    </Link>
+
+          <View style={styles.right}>
+            <MediaArt media={media} size={64} />
+            <View style={styles.meta}>
+              <Text style={styles.title} numberOfLines={2}>
+                {media.title}
+              </Text>
+              {target ? <Text style={styles.target}>{target}</Text> : null}
+              {rating != null ? <StarRating value={rating} size={14} /> : null}
+              {review ? (
+                <Text style={styles.interactions}>
+                  {review.interactionCount} interaction{review.interactionCount === 1 ? '' : 's'}
+                </Text>
+              ) : (
+                <Text style={styles.interactions}>Logged</Text>
+              )}
+            </View>
+          </View>
+        </Pressable>
+      </Link>
+      {onDelete ? (
+        <Pressable onPress={confirmDelete} hitSlop={8} style={styles.deleteBtn}>
+          <Text style={styles.deleteText}>Delete</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    paddingRight: spacing.lg,
+    alignItems: 'center',
+    paddingRight: spacing.sm,
     minHeight: 96,
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: 'row',
   },
   left: {
     width: 72,
@@ -130,5 +151,13 @@ const styles = StyleSheet.create({
   interactions: {
     ...typography.caption,
     color: colors.textMuted,
+  },
+  deleteBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  deleteText: {
+    ...typography.caption,
+    color: colors.coral,
   },
 });

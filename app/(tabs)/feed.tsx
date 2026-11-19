@@ -1,22 +1,29 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { FeedItem } from '@/components/FeedItem';
 import { FilterChips } from '@/components/FilterChips';
 import { colors, spacing, typography } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
+import { useTheme } from '@/context/Theme';
+import { loadPreferences } from '@/services/preferences';
 import type { FeedFilter } from '@/types';
 
 export default function FeedScreen() {
   const { getFeed, getReview, comments } = useAppState();
+  const { colors: c } = useTheme();
   const [filter, setFilter] = useState<FeedFilter>('all');
   const activities = getFeed(filter);
 
+  useEffect(() => {
+    void loadPreferences().then((prefs) => setFilter(prefs.defaultFeedFilter));
+  }, []);
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: c.bg }]}>
       <View style={styles.brandBar}>
-        <Text style={styles.brand}>Betterboxd</Text>
-        <Text style={styles.sub}>Friends’ activity</Text>
+        <Text style={[styles.brand, { color: c.accent }]}>Betterboxd</Text>
+        <Text style={[styles.sub, { color: c.textMuted }]}>Friends’ activity</Text>
       </View>
       <FilterChips value={filter} onChange={setFilter} />
       <FlatList
@@ -48,7 +55,6 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
   },
   brandBar: {
     paddingHorizontal: spacing.lg,
@@ -57,12 +63,10 @@ const styles = StyleSheet.create({
   },
   brand: {
     ...typography.display,
-    color: colors.accent,
     fontSize: 26,
   },
   sub: {
     ...typography.caption,
-    color: colors.textMuted,
     marginTop: 2,
   },
   emptyList: {

@@ -1,35 +1,124 @@
 /**
- * Betterboxd visual tokens — cinema-night charcoal with chartreuse accent.
- * Distinct from Letterboxd's neon green and from generic purple/cream AI themes.
+ * Betterboxd visual tokens — selectable presets (default: Midnight Coral).
  */
-export const colors = {
-  bg: '#121410',
-  bgElevated: '#1A1F1B',
-  surface: '#222823',
-  surfaceHover: '#2A312B',
-  border: '#343B35',
-  borderSubtle: '#2A312B',
 
-  text: '#F0F2EC',
-  textSecondary: '#A8AFA3',
-  textMuted: '#6E7568',
+export type ThemePresetId = 'midnightCoral' | 'amberStage' | 'tealReel';
 
-  accent: '#D4FF4A',
-  accentDim: '#A8C93A',
-  accentSoft: 'rgba(212, 255, 74, 0.14)',
+export type ThemeColors = {
+  bg: string;
+  bgElevated: string;
+  surface: string;
+  surfaceHover: string;
+  border: string;
+  borderSubtle: string;
+  text: string;
+  textSecondary: string;
+  textMuted: string;
+  accent: string;
+  accentDim: string;
+  accentSoft: string;
+  coral: string;
+  teal: string;
+  amber: string;
+  star: string;
+  starEmpty: string;
+  tabInactive: string;
+  tabActive: string;
+  overlay: string;
+};
 
-  coral: '#E85D4C',
-  teal: '#5EC4B8',
-  amber: '#E8B84A',
+export const THEME_PRESETS: Record<
+  ThemePresetId,
+  { id: ThemePresetId; label: string; colors: ThemeColors }
+> = {
+  midnightCoral: {
+    id: 'midnightCoral',
+    label: 'Midnight Coral',
+    colors: {
+      bg: '#0E1218',
+      bgElevated: '#161C26',
+      surface: '#1C2430',
+      surfaceHover: '#243042',
+      border: '#2E3A4A',
+      borderSubtle: '#243042',
+      text: '#F4F1EC',
+      textSecondary: '#A8B0BD',
+      textMuted: '#6E7888',
+      accent: '#FF6B5A',
+      accentDim: '#D45548',
+      accentSoft: 'rgba(255, 107, 90, 0.16)',
+      coral: '#FF6B5A',
+      teal: '#5EC4B8',
+      amber: '#E8B84A',
+      star: '#FF6B5A',
+      starEmpty: '#3A4555',
+      tabInactive: '#6E7888',
+      tabActive: '#FF6B5A',
+      overlay: 'rgba(14, 18, 24, 0.88)',
+    },
+  },
+  amberStage: {
+    id: 'amberStage',
+    label: 'Amber Stage',
+    colors: {
+      bg: '#100E0C',
+      bgElevated: '#1A1612',
+      surface: '#241F19',
+      surfaceHover: '#2E2820',
+      border: '#3A3228',
+      borderSubtle: '#2E2820',
+      text: '#F7F1E6',
+      textSecondary: '#B8AE9E',
+      textMuted: '#7A7164',
+      accent: '#E8B84A',
+      accentDim: '#C49A3A',
+      accentSoft: 'rgba(232, 184, 74, 0.16)',
+      coral: '#E85D4C',
+      teal: '#5EC4B8',
+      amber: '#E8B84A',
+      star: '#E8B84A',
+      starEmpty: '#3A342C',
+      tabInactive: '#7A7164',
+      tabActive: '#E8B84A',
+      overlay: 'rgba(16, 14, 12, 0.88)',
+    },
+  },
+  tealReel: {
+    id: 'tealReel',
+    label: 'Teal Reel',
+    colors: {
+      bg: '#0C1214',
+      bgElevated: '#141C20',
+      surface: '#1A2428',
+      surfaceHover: '#243034',
+      border: '#2E3C42',
+      borderSubtle: '#243034',
+      text: '#EEF3F4',
+      textSecondary: '#A3B2B6',
+      textMuted: '#6A7A7E',
+      accent: '#3DB8A8',
+      accentDim: '#2F968A',
+      accentSoft: 'rgba(61, 184, 168, 0.16)',
+      coral: '#E85D4C',
+      teal: '#3DB8A8',
+      amber: '#E8B84A',
+      star: '#3DB8A8',
+      starEmpty: '#2A383C',
+      tabInactive: '#6A7A7E',
+      tabActive: '#3DB8A8',
+      overlay: 'rgba(12, 18, 20, 0.88)',
+    },
+  },
+};
 
-  star: '#D4FF4A',
-  starEmpty: '#3A423C',
+export const DEFAULT_THEME_ID: ThemePresetId = 'midnightCoral';
 
-  tabInactive: '#6E7568',
-  tabActive: '#D4FF4A',
+/** Active palette — ThemeProvider keeps this in sync for StyleSheet modules. */
+export let colors: ThemeColors = THEME_PRESETS[DEFAULT_THEME_ID].colors;
 
-  overlay: 'rgba(18, 20, 16, 0.85)',
-} as const;
+export function applyThemeColors(next: ThemeColors): void {
+  colors = next;
+}
 
 export const spacing = {
   xs: 4,

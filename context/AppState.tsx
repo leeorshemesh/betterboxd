@@ -12,6 +12,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useAuth } from '@/context/Auth';
 import { api, ApiError } from '@/services/api';
+import { cacheMediaItems } from '@/services/mediaCache';
 import type {
   Comment,
   DiaryEntry,
@@ -71,9 +72,12 @@ interface AppStateValue {
   lists: MediaList[];
   topFive: TopFiveConfig;
   setTopFiveMode: (mode: TopFiveMode) => void;
+  setTopFiveSlots: (mode: TopFiveMode, slots: TopFiveConfig['slots']) => Promise<void>;
   logTitle: (input: NewLogInput) => Promise<{ entry: DiaryEntry; review: Review | null }>;
+  deleteDiary: (entryId: string) => Promise<void>;
   addComment: (reviewId: string, body: string) => Promise<Comment>;
   addToList: (media: MediaItem) => Promise<{ list: MediaList; added: boolean }>;
+  removeFromList: (mediaId: string) => Promise<void>;
   updateProfile: (patch: { displayName?: string; bio?: string; isPublic?: boolean }) => Promise<void>;
   searchUsers: (query: string) => Promise<UserSearchHit[]>;
   sendFriendRequest: (username: string) => Promise<void>;
@@ -166,6 +170,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         applyAccount(account);
         setDiary([...diaryPayload.entries].sort(byLoggedOn));
+        cacheMediaItems(diaryPayload.entries.map((entry) => entry.media));
+        cacheMediaItems(
+          [...diaryPayload.reviews, ...feedPayload.reviews]
+            .map((review) => review.media)
+            .filter((media): media is MediaItem => Boolean(media)),
+        );
         setReviews(mergeById(diaryPayload.reviews, feedPayload.reviews));
         setComments(mergeById(mine.comments, feedPayload.comments));
         setActivities(feedPayload.activities);
@@ -205,6 +215,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, []);
 
+  const setTopFiveSlots = useCallback(async (mode: TopFiveMode, slots: TopFiveConfig['slots']) => {
+    const result = await api<{ topFive: TopFiveConfig }>('/top-five', {
+      method: 'PATCH',
+      body: { mode, slots },
+    });
+    setTopFive(result.topFive);
+  }, []);
+
   const logTitle = useCallback(async (input: NewLogInput) => {
     const body = input.body?.trim();
     const result = await api<{ entry: DiaryEntry; review: Review | null }>('/diary', {
@@ -221,6 +239,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           : undefined,
       },
     });
+    cacheMediaItems([result.entry.media]);
     setDiary((prev) =>
       [result.entry, ...prev.filter((entry) => entry.id !== result.entry.id)].sort(byLoggedOn),
     );
@@ -229,6 +248,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setDirectory((prev) => rememberUsers(prev, [result.review?.author]));
     }
     return result;
+  }, []);
+
+  const deleteDiary = useCallback(async (entryId: string) => {
+    await api(`/diary/${entryId}`, { method: 'DELETE' });
+    setDiary((prev) => {
+      const entry = prev.find((item) => item.id === entryId);
+      if (entry?.reviewId) {
+        setReviews((reviewsPrev) => reviewsPrev.filter((review) => review.id !== entry.reviewId));
+      }
+      return prev.filter((item) => item.id !== entryId);
+    });
   }, []);
 
   const addComment = useCallback(async (reviewId: string, body: string) => {
@@ -249,12 +279,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToList = useCallback(async (media: MediaItem) => {
+    cacheMediaItems([media]);
     const result = await api<{ list: MediaList; added: boolean }>('/lists/items', {
       method: 'POST',
       body: { media },
     });
     setLists((prev) => prev.map((list) => (list.id === result.list.id ? result.list : list)));
     return result;
+  }, []);
+
+  const removeFromList = useCallback(async (mediaId: string) => {
+    const result = await api<{ lists: MediaList[] }>(`/lists/items/${encodeURIComponent(mediaId)}`, {
+      method: 'DELETE',
+    });
+    setLists(result.lists);
   }, []);
 
   const updateProfile = useCallback(
@@ -390,9 +428,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       lists,
       topFive,
       setTopFiveMode,
+      setTopFiveSlots,
       logTitle,
+      deleteDiary,
       addComment,
       addToList,
+      removeFromList,
       updateProfile,
       searchUsers,
       sendFriendRequest,
@@ -420,9 +461,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     lists,
     topFive,
     setTopFiveMode,
+    setTopFiveSlots,
     logTitle,
+    deleteDiary,
     addComment,
     addToList,
+    removeFromList,
     updateProfile,
     searchUsers,
     sendFriendRequest,

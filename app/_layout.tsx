@@ -18,6 +18,7 @@ import 'react-native-reanimated';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { AppStateProvider } from '@/context/AppState';
 import { AuthProvider, useAuth } from '@/context/Auth';
+import { ThemeProvider, useTheme } from '@/context/Theme';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -48,33 +49,36 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <AuthProvider>
-      <RootNavigator />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
 function RootNavigator() {
   const { status, bootError, retryBoot, forgetSession } = useAuth();
+  const { colors: c } = useTheme();
 
   if (status === 'loading') {
     return (
-      <View style={styles.gate}>
-        <ActivityIndicator color={colors.accent} />
+      <View style={[styles.gate, { backgroundColor: c.bg }]}>
+        <ActivityIndicator color={c.accent} />
       </View>
     );
   }
 
   if (bootError) {
     return (
-      <View style={styles.gate}>
-        <Text style={styles.errorTitle}>Can’t reach your account</Text>
-        <Text style={styles.errorBody}>{bootError}</Text>
-        <Pressable style={styles.retry} onPress={retryBoot}>
-          <Text style={styles.retryText}>Try again</Text>
+      <View style={[styles.gate, { backgroundColor: c.bg }]}>
+        <Text style={[styles.errorTitle, { color: c.text }]}>Can’t reach your account</Text>
+        <Text style={[styles.errorBody, { color: c.textSecondary }]}>{bootError}</Text>
+        <Pressable style={[styles.retry, { backgroundColor: c.accent }]} onPress={retryBoot}>
+          <Text style={[styles.retryText, { color: c.bg }]}>Try again</Text>
         </Pressable>
         <Pressable onPress={forgetSession}>
-          <Text style={styles.link}>Use a different account</Text>
+          <Text style={[styles.link, { color: c.accent }]}>Use a different account</Text>
         </Pressable>
       </View>
     );
@@ -82,17 +86,17 @@ function RootNavigator() {
 
   const signedIn = status === 'signedIn';
   const stack = (
-    <View style={styles.app}>
+    <View style={[styles.app, { backgroundColor: c.bg }]}>
       <StatusBar style="light" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.bgElevated },
-          headerTintColor: colors.accent,
+          headerStyle: { backgroundColor: c.bgElevated },
+          headerTintColor: c.accent,
           headerTitleStyle: {
             fontFamily: 'DMSans_600SemiBold',
-            color: colors.text,
+            color: c.text,
           },
-          contentStyle: { backgroundColor: colors.bg },
+          contentStyle: { backgroundColor: c.bg },
           headerShadowVisible: false,
         }}
       >
@@ -103,6 +107,8 @@ function RootNavigator() {
           <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal' }} />
           <Stack.Screen name="friends" options={{ title: 'Friends' }} />
           <Stack.Screen name="my-comments" options={{ title: 'My Comments' }} />
+          <Stack.Screen name="lists" options={{ title: 'Lists' }} />
+          <Stack.Screen name="user/[username]" options={{ title: 'Profile' }} />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn} redirectTo="/">
           <Stack.Screen name="sign-in" options={{ headerShown: false, title: 'Sign in' }} />
@@ -116,23 +122,21 @@ function RootNavigator() {
 }
 
 const styles = StyleSheet.create({
-  app: { flex: 1, backgroundColor: colors.bg },
+  app: { flex: 1 },
   gate: {
     flex: 1,
-    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
     gap: spacing.md,
   },
-  errorTitle: { ...typography.title, color: colors.text, textAlign: 'center' },
-  errorBody: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
+  errorTitle: { ...typography.title, textAlign: 'center' },
+  errorBody: { ...typography.body, textAlign: 'center' },
   retry: {
-    backgroundColor: colors.accent,
     borderRadius: radii.md,
     paddingHorizontal: 18,
     paddingVertical: 10,
   },
-  retryText: { ...typography.bodyBold, color: colors.bg },
-  link: { ...typography.body, color: colors.accent },
+  retryText: { ...typography.bodyBold },
+  link: { ...typography.body },
 });

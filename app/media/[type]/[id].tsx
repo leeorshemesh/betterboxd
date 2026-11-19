@@ -1,4 +1,4 @@
-import { Link, Stack, useLocalSearchParams } from 'expo-router';
+import { Link, Stack, useLocalSearchParams, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,7 +23,8 @@ export default function MediaDetailScreen() {
   const params = useLocalSearchParams<{ type: string; id: string }>();
   const type = Array.isArray(params.type) ? params.type[0] : params.type;
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { getPublicReviewsForMedia, addToList, lists, loadMediaReviews } = useAppState();
+  const { getPublicReviewsForMedia, addToList, removeFromList, lists, loadMediaReviews } =
+    useAppState();
   const [media, setMedia] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
@@ -73,11 +74,14 @@ export default function MediaDetailScreen() {
   const list = lists.find((l) => l.kind === listKind);
   const alreadyInList = list?.mediaIds.includes(media.id) ?? false;
 
-  const onAddToList = () => {
-    void addToList(media)
-      .then((result) => {
-        setToast(result.added ? `Added to ${result.list.name}` : `Already on ${result.list.name}`);
-      })
+  const onToggleList = () => {
+    const action = alreadyInList
+      ? removeFromList(media.id).then(() => `Removed from ${list?.name ?? 'list'}`)
+      : addToList(media).then((result) =>
+          result.added ? `Added to ${result.list.name}` : `Already on ${result.list.name}`,
+        );
+    void action
+      .then((message) => setToast(message))
       .catch((error: unknown) => {
         setToast(error instanceof ApiError ? error.message : 'Could not update your list');
       })
@@ -104,11 +108,13 @@ export default function MediaDetailScreen() {
         </View>
 
         <Pressable
-          onPress={onAddToList}
+          onPress={onToggleList}
           style={[styles.listBtn, alreadyInList && styles.listBtnDone]}
         >
           <Text style={[styles.listBtnText, alreadyInList && styles.listBtnTextDone]}>
-            {alreadyInList ? `On ${list?.name ?? 'list'}` : `Add to ${list?.name ?? 'list'}`}
+            {alreadyInList
+              ? `Remove from ${list?.name ?? 'list'}`
+              : `Add to ${list?.name ?? 'list'}`}
           </Text>
         </Pressable>
         {toast ? <Text style={styles.toast}>{toast}</Text> : null}
@@ -129,7 +135,13 @@ export default function MediaDetailScreen() {
                   {author && <Avatar user={author} size={36} />}
                   <View style={{ flex: 1 }}>
                     <View style={styles.reviewTop}>
-                      <Text style={styles.reviewAuthor}>{author?.displayName ?? 'User'}</Text>
+                      {author ? (
+                        <Link href={`/user/${author.username}` as Href} asChild>
+                          <Text style={styles.reviewAuthor}>{author.displayName}</Text>
+                        </Link>
+                      ) : (
+                        <Text style={styles.reviewAuthor}>User</Text>
+                      )}
                       <Text style={styles.reviewDate}>{formatDayLabel(r.loggedOn ?? r.createdAt)}</Text>
                     </View>
                     <StarRating value={r.rating} size={14} />

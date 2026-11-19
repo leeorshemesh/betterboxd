@@ -1,0 +1,10 @@
+# https://docs.railway.com/reference/config-as-code
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm install && npm install --prefix server && npm run build:showcase"
+
+[deploy]
+startCommand = "npm run server:prod"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"

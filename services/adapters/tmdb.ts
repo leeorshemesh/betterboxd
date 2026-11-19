@@ -121,11 +121,67 @@ async function tmdbFetch<T>(path: string, params: Record<string, string> = {}): 
   return res.json() as Promise<T>;
 }
 
-export async function tmdbSearch(query: string, type?: MediaType): Promise<MediaItem[]> {
+function genreIdForName(name: string, kind: 'movie' | 'show'): number | undefined {
+  const table = kind === 'movie' ? GENRE_MOVIE : GENRE_TV;
+  const lower = name.trim().toLowerCase();
+  for (const [id, label] of Object.entries(table)) {
+    if (label.toLowerCase() === lower || label.toLowerCase().includes(lower)) {
+      return Number(id);
+    }
+  }
+  return undefined;
+}
+
+export async function tmdbDiscover(options: {
+  type?: MediaType;
+  genre?: string;
+}): Promise<MediaItem[]> {
+  if (!isTmdbConfigured()) return [];
+  const { type, genre } = options;
+
+  async function discover(kind: 'movie' | 'show'): Promise<MediaItem[]> {
+    const genreId = genre ? genreIdForName(genre, kind) : undefined;
+    if (genre && !genreId) return [];
+    const path = kind === 'movie' ? '/discover/movie' : '/discover/tv';
+    const params: Record<string, string> = {
+      sort_by: 'popularity.desc',
+      include_adult: 'false',
+    };
+    if (genreId) params.with_genres = String(genreId);
+    const data = await tmdbFetch<{ results: TmdbMovie[] }>(path, params);
+    return data.results.slice(0, 20).map((r) => toMediaItem(r, kind));
+  }
+
+  if (type === 'movie') return discover('movie');
+  if (type === 'show') return discover('show');
+  if (!type) {
+    const [movies, shows] = await Promise.all([discover('movie'), discover('show')]);
+    return [...movies, ...shows];
+  }
+  return [];
+}
+
+export async function tmdbSimilar(id: string): Promise<MediaItem[]> {
+  const parsed = parseTmdbId(id);
+  if (!parsed || !isTmdbConfigured()) return [];
+  const path =
+    parsed.kind === 'movie'
+      ? `/movie/${parsed.tmdbId}/similar`
+      : `/tv/${parsed.tmdbId}/similar`;
+  const data = await tmdbFetch<{ results: TmdbMovie[] }>(path);
+  return data.results.slice(0, 12).map((r) => toMediaItem(r, parsed.kind));
+}
+
+export async function tmdbSearch(
+  query: string,
+  type?: MediaType,
+  genre?: string,
+): Promise<MediaItem[]> {
   if (!isTmdbConfigured()) return [];
   const q = query.trim();
 
   if (!q) {
+    if (genre) return tmdbDiscover({ type, genre });
     return tmdbBrowse(type);
   }
 
@@ -134,13 +190,21 @@ export async function tmdbSearch(query: string, type?: MediaType): Promise<Media
       query: q,
       include_adult: 'false',
     });
-    const movies = data.results.slice(0, 20).map((r) => toMediaItem(r, 'movie'));
+    let movies = data.results.slice(0, 20).map((r) => toMediaItem(r, 'movie'));
+    if (genre) {
+      const g = genre.toLowerCase();
+      movies = movies.filter((m) => m.genres.some((x) => x.toLowerCase().includes(g)));
+    }
     if (type === 'movie') return movies;
     const tv = await tmdbFetch<{ results: TmdbMovie[] }>('/search/tv', {
       query: q,
       include_adult: 'false',
     });
-    const shows = tv.results.slice(0, 20).map((r) => toMediaItem(r, 'show'));
+    let shows = tv.results.slice(0, 20).map((r) => toMediaItem(r, 'show'));
+    if (genre) {
+      const g = genre.toLowerCase();
+      shows = shows.filter((m) => m.genres.some((x) => x.toLowerCase().includes(g)));
+    }
     const merged = [...movies, ...shows];
     cacheMediaItems(merged);
     return merged;
@@ -151,7 +215,12 @@ export async function tmdbSearch(query: string, type?: MediaType): Promise<Media
       query: q,
       include_adult: 'false',
     });
-    return data.results.slice(0, 20).map((r) => toMediaItem(r, 'show'));
+    let shows = data.results.slice(0, 20).map((r) => toMediaItem(r, 'show'));
+    if (genre) {
+      const g = genre.toLowerCase();
+      shows = shows.filter((m) => m.genres.some((x) => x.toLowerCase().includes(g)));
+    }
+    return shows;
   }
 
   return [];

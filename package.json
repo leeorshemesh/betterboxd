@@ -2,6 +2,9 @@
   "name": "betterboxd",
   "version": "1.0.0",
   "main": "expo-router/entry",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/fraunces": "^0.4.1",
@@ -35,7 +38,14 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "server": "npm run dev --prefix server"
+    "typecheck:server": "npm run typecheck --prefix server",
+    "test:server": "npm test --prefix server",
+    "server": "npm run dev --prefix server",
+    "server:prod": "npm run start --prefix server",
+    "postinstall": "npm install --prefix server",
+    "build:showcase": "node scripts/build-showcase.mjs",
+    "start:showcase": "npm run build:showcase && npm run server:prod",
+    "verify:client-secrets": "node scripts/verify-client-secrets.mjs"
   },
   "private": true
 }

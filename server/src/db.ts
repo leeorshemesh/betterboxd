@@ -7,7 +7,11 @@ const root = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(root, '..', 'data');
 mkdirSync(dataDir, { recursive: true });
 
-export const db = new DatabaseSync(join(dataDir, 'betterboxd.sqlite'));
+const dbPath = process.env.BETTERBOXD_DB_PATH ?? join(dataDir, 'betterboxd.sqlite');
+const dbParent = dirname(dbPath);
+mkdirSync(dbParent, { recursive: true });
+
+export const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA foreign_keys = ON');
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA busy_timeout = 5000');

@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter, type Href } from 'expo-router';
 
 import { Avatar } from '@/components/Avatar';
 import { MediaArt } from '@/components/MediaArt';
@@ -17,6 +17,7 @@ interface FeedItemProps {
 }
 
 export function FeedItem({ activity, review, comment }: FeedItemProps) {
+  const router = useRouter();
   const { getUser } = useAppState();
   const user =
     getUser(activity.userId) ??
@@ -31,10 +32,23 @@ export function FeedItem({ activity, review, comment }: FeedItemProps) {
     <Link href={`/review/${review.id}`} asChild>
       <Pressable style={styles.card}>
         <View style={styles.header}>
-          <Avatar user={user} size={36} />
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation?.();
+              router.push(`/user/${user.username}` as Href);
+            }}
+            hitSlop={6}
+          >
+            <Avatar user={user} size={36} />
+          </Pressable>
           <View style={styles.headerText}>
             <Text style={styles.meta}>
-              <Text style={styles.name}>{user.displayName}</Text>
+              <Text
+                style={styles.name}
+                onPress={() => router.push(`/user/${user.username}` as Href)}
+              >
+                {user.displayName}
+              </Text>
               {isComment ? ' commented on a review of ' : ' reviewed '}
               <Text style={styles.title}>{media.title}</Text>
               {target ? ` (${target})` : ''}

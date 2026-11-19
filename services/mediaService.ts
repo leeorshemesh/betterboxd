@@ -1,35 +1,13 @@
 /**
- * Media catalog — routes by type:
- *   movie / show → TMDB (EXPO_PUBLIC_TMDB_API_KEY)
- *   book         → Open Library (no key)
- *   music        → Spotify (Client ID + Secret; falls back to mock if secret missing)
- *
- * Mock catalog still used for seeded reviews and as Spotify fallback.
+ * Media catalog — all live fetches go through the Betterboxd API `/catalog/*`
+ * so TMDB / Spotify secrets never ship in the Expo web or mobile bundle.
  */
 import type { MediaItem, MediaType } from '@/types';
-import {
-  allGenres,
-  getCatalogById,
-  getCatalogByType,
-  mockCatalog,
-  searchCatalog,
-} from '@/data/mock/catalog';
-import { openLibraryGetById, openLibrarySearch } from '@/services/adapters/openLibrary';
-import {
-  isSpotifyConfigured,
-  spotifyGetById,
-  spotifySearch,
-} from '@/services/adapters/spotify';
-import {
-  isTmdbConfigured,
-  parseTmdbId,
-  tmdbGetById,
-  tmdbListGenres,
-  tmdbSearch,
-} from '@/services/adapters/tmdb';
+import { mockCatalog, getCatalogById as getMockById } from '@/data/mock/catalog';
+import { api } from '@/services/api';
 import { getCachedMedia } from '@/services/mediaCache';
 
-export type MediaProvider = 'mock' | 'tmdb' | 'openlibrary' | 'spotify' | 'composite';
+export type MediaProvider = 'api';
 
 export interface MediaSearchOptions {
   query?: string;
@@ -43,105 +21,85 @@ export interface MediaService {
   getById(id: string): Promise<MediaItem | null>;
   getByType(type: MediaType): Promise<MediaItem[]>;
   listGenres(): Promise<string[]>;
+  similar(id: string): Promise<MediaItem[]>;
 }
 
-function applyGenreFilter(items: MediaItem[], genre?: string): MediaItem[] {
-  if (!genre) return items;
-  const g = genre.toLowerCase();
-  return items.filter((m) => m.genres.some((x) => x.toLowerCase().includes(g)));
+let cachedProviderStatus: { tmdb: boolean; openLibrary: boolean; spotify: boolean } | null = null;
+
+/** Prefer exact title matches, items with art, then stable title order; drop duplicate ids. */
+export function rankAndDedupe(items: MediaItem[], query = ''): MediaItem[] {
+  const q = query.trim().toLowerCase();
+  const seen = new Set<string>();
+  const unique: MediaItem[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    unique.push(item);
+  }
+
+  const score = (item: MediaItem): number => {
+    let s = 0;
+    const title = item.title.toLowerCase();
+    if (q) {
+      if (title === q) s += 100;
+      else if (title.startsWith(q)) s += 60;
+      else if (title.includes(q)) s += 30;
+      if (item.subtitle?.toLowerCase().includes(q)) s += 10;
+      if (item.artist?.toLowerCase().includes(q)) s += 10;
+    }
+    if (item.imageUrl) s += 8;
+    if (item.year) s += 2;
+    if (item.genres.length > 0) s += 1;
+    return s;
+  };
+
+  return unique.sort((a, b) => {
+    const diff = score(b) - score(a);
+    if (diff !== 0) return diff;
+    return a.title.localeCompare(b.title);
+  });
 }
 
-async function searchMoviesShows(query: string, type?: MediaType): Promise<MediaItem[]> {
-  if (!isTmdbConfigured()) {
-    return searchCatalog(query, type === 'show' ? 'show' : type === 'movie' ? 'movie' : undefined).filter(
-      (m) => m.type === 'movie' || m.type === 'show',
-    );
-  }
-  try {
-    return await tmdbSearch(query, type);
-  } catch (e) {
-    console.warn('TMDB search failed, using mock', e);
-    return searchCatalog(query, type).filter((m) => m.type === 'movie' || m.type === 'show');
-  }
+export function inferMediaType(id: string): MediaType {
+  if (id.startsWith('tmdb-show-') || id.startsWith('show-')) return 'show';
+  if (id.startsWith('ol-book-') || id.startsWith('book-')) return 'book';
+  if (id.startsWith('spotify-') || id.startsWith('music-')) return 'music';
+  return 'movie';
 }
 
-async function searchBooks(query: string): Promise<MediaItem[]> {
-  try {
-    return await openLibrarySearch(query);
-  } catch (e) {
-    console.warn('Open Library search failed, using mock', e);
-    return searchCatalog(query, 'book');
-  }
-}
-
-async function searchMusic(query: string): Promise<MediaItem[]> {
-  if (!isSpotifyConfigured()) {
-    return searchCatalog(query, 'music');
-  }
-  try {
-    return await spotifySearch(query);
-  } catch (e) {
-    console.warn('Spotify search failed, using mock', e);
-    return searchCatalog(query, 'music');
-  }
-}
-
-const compositeMediaService: MediaService = {
-  provider: 'composite',
+const apiMediaService: MediaService = {
+  provider: 'api',
 
   async search({ query = '', type, genre }: MediaSearchOptions) {
-    let results: MediaItem[] = [];
-
-    if (!type) {
-      const [film, books, music] = await Promise.all([
-        searchMoviesShows(query),
-        searchBooks(query),
-        searchMusic(query),
-      ]);
-      results = [...film, ...books, ...music];
-    } else if (type === 'movie' || type === 'show') {
-      results = await searchMoviesShows(query, type);
-    } else if (type === 'book') {
-      results = await searchBooks(query);
-    } else if (type === 'music') {
-      results = await searchMusic(query);
-    }
-
-    return applyGenreFilter(results, genre);
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    if (type) params.set('type', type);
+    if (genre) params.set('genre', genre);
+    const qs = params.toString();
+    const data = await api<{
+      results: MediaItem[];
+      providers?: { tmdb: boolean; openLibrary: boolean; spotify: boolean };
+    }>(`/catalog/search${qs ? `?${qs}` : ''}`);
+    if (data.providers) cachedProviderStatus = data.providers;
+    return data.results;
   },
 
   async getById(id: string) {
     const cached = getCachedMedia(id);
     if (cached) return cached;
 
-    const mock = getCatalogById(id);
+    const mock = getMockById(id);
     if (mock) return mock;
 
-    if (parseTmdbId(id) && isTmdbConfigured()) {
-      try {
-        return await tmdbGetById(id);
-      } catch (e) {
-        console.warn('TMDB getById failed', e);
-      }
+    const type = inferMediaType(id);
+    try {
+      const data = await api<{ item: MediaItem }>(
+        `/catalog/${type}/${encodeURIComponent(id)}`,
+      );
+      return data.item;
+    } catch {
+      return null;
     }
-
-    if (id.startsWith('ol-book-')) {
-      try {
-        return await openLibraryGetById(id);
-      } catch (e) {
-        console.warn('Open Library getById failed', e);
-      }
-    }
-
-    if (id.startsWith('spotify-') && isSpotifyConfigured()) {
-      try {
-        return await spotifyGetById(id);
-      } catch (e) {
-        console.warn('Spotify getById failed', e);
-      }
-    }
-
-    return null;
   },
 
   async getByType(type: MediaType) {
@@ -149,19 +107,24 @@ const compositeMediaService: MediaService = {
   },
 
   async listGenres() {
-    const fromMock = allGenres;
-    if (!isTmdbConfigured()) return fromMock;
+    const data = await api<{ genres: string[] }>('/catalog/genres');
+    return data.genres;
+  },
+
+  async similar(id: string) {
+    const type = inferMediaType(id);
     try {
-      const fromTmdb = await tmdbListGenres();
-      const set = new Set([...fromMock, ...fromTmdb]);
-      return [...set].sort();
+      const data = await api<{ results: MediaItem[] }>(
+        `/catalog/${type}/${encodeURIComponent(id)}/similar`,
+      );
+      return data.results;
     } catch {
-      return fromMock;
+      return [];
     }
   },
 };
 
-export const mediaService: MediaService = compositeMediaService;
+export const mediaService: MediaService = apiMediaService;
 
 /** Sync helpers for screens that already have mock / cached data in memory. */
 export function getMediaSync(id: string): MediaItem | undefined {
@@ -173,9 +136,23 @@ export function getAllMediaSync(): MediaItem[] {
 }
 
 export function getMediaProviderStatus() {
-  return {
-    tmdb: isTmdbConfigured(),
-    openLibrary: true,
-    spotify: isSpotifyConfigured(),
-  };
+  return (
+    cachedProviderStatus ?? {
+      tmdb: true,
+      openLibrary: true,
+      spotify: true,
+    }
+  );
+}
+
+export async function refreshMediaProviderStatus() {
+  try {
+    const data = await api<{
+      providers: { tmdb: boolean; openLibrary: boolean; spotify: boolean };
+    }>('/catalog/status');
+    cachedProviderStatus = data.providers;
+  } catch {
+    // keep last known / optimistic defaults
+  }
+  return getMediaProviderStatus();
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Link, type Href } from 'expo-router';
 
 import { Avatar } from '@/components/Avatar';
 import { colors, radii, spacing, typography } from '@/constants/theme';
@@ -89,11 +90,15 @@ export default function FriendsScreen() {
             const incoming = incomingRequests.find((request) => request.user.id === hit.user.id);
             return (
               <View key={hit.user.id} style={styles.row}>
-                <Avatar user={hit.user} size={40} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{hit.user.displayName}</Text>
-                  <Text style={styles.username}>@{hit.user.username}</Text>
-                </View>
+                <Link href={`/user/${hit.user.username}` as Href} asChild>
+                  <Pressable style={styles.profileLink}>
+                    <Avatar user={hit.user} size={40} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.name}>{hit.user.displayName}</Text>
+                      <Text style={styles.username}>@{hit.user.username}</Text>
+                    </View>
+                  </Pressable>
+                </Link>
                 {hit.friendStatus === 'none' ? (
                   <Pressable
                     style={styles.smallBtn}
@@ -136,11 +141,15 @@ export default function FriendsScreen() {
               <Text style={styles.section}>Requests</Text>
               {incomingRequests.map((request) => (
                 <View key={request.id} style={styles.row}>
-                  <Avatar user={request.user} size={48} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.name}>{request.user.displayName}</Text>
-                    <Text style={styles.username}>@{request.user.username}</Text>
-                  </View>
+                  <Link href={`/user/${request.user.username}` as Href} asChild>
+                    <Pressable style={styles.profileLink}>
+                      <Avatar user={request.user} size={48} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.name}>{request.user.displayName}</Text>
+                        <Text style={styles.username}>@{request.user.username}</Text>
+                      </View>
+                    </Pressable>
+                  </Link>
                   <Pressable
                     style={styles.smallBtn}
                     disabled={busyId === request.id}
@@ -183,12 +192,18 @@ export default function FriendsScreen() {
       ListEmptyComponent={<Text style={styles.hint}>No friends yet. Search for a username above.</Text>}
       renderItem={({ item }) => (
         <View style={styles.row}>
-          <Avatar user={item} size={48} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{item.displayName}</Text>
-            <Text style={styles.username}>@{item.username}</Text>
-            <Text style={styles.privacy}>{item.isPublic ? 'Public profile' : 'Private profile'}</Text>
-          </View>
+          <Link href={`/user/${item.username}` as Href} asChild>
+            <Pressable style={styles.profileLink}>
+              <Avatar user={item} size={48} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{item.displayName}</Text>
+                <Text style={styles.username}>@{item.username}</Text>
+                <Text style={styles.privacy}>
+                  {item.isPublic ? 'Public profile' : 'Private profile'}
+                </Text>
+              </View>
+            </Pressable>
+          </Link>
           <Pressable
             onPress={() =>
               Alert.alert('Remove friend', `Remove ${item.displayName}?`, [
@@ -249,6 +264,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+  },
+  profileLink: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   name: { ...typography.headline, color: colors.text },
   username: { ...typography.caption, color: colors.textMuted },

@@ -3,9 +3,12 @@ import { Tabs } from 'expo-router';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
-import { colors, typography } from '@/constants/theme';
+import { typography } from '@/constants/theme';
+import { useTheme } from '@/context/Theme';
 
 export default function TabLayout() {
+  const { colors } = useTheme();
+
   return (
     <Tabs
       screenOptions={{
@@ -56,8 +59,16 @@ export default function TabLayout() {
         options={{
           title: 'Add',
           tabBarIcon: ({ focused }) => (
-            <View style={[styles.addBtn, focused && styles.addBtnFocused]}>
-              <Text style={styles.addPlus}>+</Text>
+            <View
+              style={[
+                styles.addBtn,
+                {
+                  backgroundColor: focused ? colors.accentSoft : colors.surface,
+                  borderColor: focused ? colors.accent : colors.accentDim,
+                },
+              ]}
+            >
+              <Text style={[styles.addPlus, { color: colors.accent }]}>+</Text>
             </View>
           ),
           tabBarLabel: () => null,
@@ -91,19 +102,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.surface,
     borderWidth: 1.5,
-    borderColor: colors.accentDim,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Platform.OS === 'ios' ? 0 : 4,
   },
-  addBtnFocused: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accent,
-  },
   addPlus: {
-    color: colors.accent,
     fontSize: 28,
     fontWeight: '300',
     marginTop: -2,

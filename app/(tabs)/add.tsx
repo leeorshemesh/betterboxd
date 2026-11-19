@@ -16,6 +16,7 @@ import { colors, radii, spacing, typography, MEDIA_TYPE_SINGULAR } from '@/const
 import { useAppState } from '@/context/AppState';
 import { ApiError } from '@/services/api';
 import { mediaService } from '@/services/mediaService';
+import { loadPreferences } from '@/services/preferences';
 import type { MediaItem, MediaType, MusicTargetKind } from '@/types';
 
 const TYPES: MediaType[] = ['movie', 'show', 'book', 'music'];
@@ -44,6 +45,11 @@ export default function AddScreen() {
   const [tagText, setTagText] = useState('');
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingShowMeta, setLoadingShowMeta] = useState(false);
+
+  useEffect(() => {
+    void loadPreferences().then((prefs) => setMediaType(prefs.defaultAddType));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +67,28 @@ export default function AddScreen() {
     setEpisode(undefined);
     setMusicKind(undefined);
     setQuery('');
+    setLoadingShowMeta(false);
   }, [mediaType]);
+
+  const selectTitle = async (item: MediaItem) => {
+    setSeason(undefined);
+    setEpisode(undefined);
+    if (item.type === 'music') setMusicKind(item.musicKind);
+    else setMusicKind(undefined);
+
+    if (item.type === 'show' && !item.seasons) {
+      setSelected(item);
+      setLoadingShowMeta(true);
+      try {
+        const detailed = await mediaService.getById(item.id);
+        setSelected(detailed ?? item);
+      } finally {
+        setLoadingShowMeta(false);
+      }
+      return;
+    }
+    setSelected(item);
+  };
 
   const tags = useMemo(
     () =>
@@ -72,14 +99,25 @@ export default function AddScreen() {
     [tagText],
   );
 
+  const seasonCount = selected?.seasons && selected.seasons > 0 ? selected.seasons : 0;
   const seasonOptions = useMemo(() => {
-    if (!selected?.seasons) return [];
-    return Array.from({ length: selected.seasons }, (_, i) => i + 1);
-  }, [selected]);
+    if (seasonCount > 0) {
+      return Array.from({ length: seasonCount }, (_, i) => i + 1);
+    }
+    // Fallback when provider didn't return a season count — still allow S1–S20.
+    if (selected?.type === 'show') {
+      return Array.from({ length: 20 }, (_, i) => i + 1);
+    }
+    return [];
+  }, [selected, seasonCount]);
 
   const episodeOptions = useMemo(() => {
-    if (!selected?.episodesPerSeason || season == null) return [];
-    return Array.from({ length: selected.episodesPerSeason }, (_, i) => i + 1);
+    if (season == null) return [];
+    const count =
+      selected?.episodesPerSeason && selected.episodesPerSeason > 0
+        ? selected.episodesPerSeason
+        : 24;
+    return Array.from({ length: count }, (_, i) => i + 1);
   }, [selected, season]);
 
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(loggedOn);
@@ -157,10 +195,11 @@ export default function AddScreen() {
       {!selected && (
         <View style={styles.results}>
           {results.slice(0, 8).map((item) => (
-            <Pressable key={item.id} style={styles.resultRow} onPress={() => {
-              setSelected(item);
-              if (item.type === 'music') setMusicKind(item.musicKind);
-            }}>
+            <Pressable
+              key={item.id}
+              style={styles.resultRow}
+              onPress={() => void selectTitle(item)}
+            >
               <MediaArt media={item} size={40} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.resultTitle}>{item.title}</Text>
@@ -179,7 +218,12 @@ export default function AddScreen() {
           <MediaArt media={selected} size={64} />
           <View style={{ flex: 1 }}>
             <Text style={styles.selectedTitle}>{selected.title}</Text>
-            <Text style={styles.resultSub}>{selected.subtitle}</Text>
+            <Text style={styles.resultSub}>
+              {selected.subtitle}
+              {selected.type === 'show' && selected.seasons
+                ? ` · ${selected.seasons} season${selected.seasons === 1 ? '' : 's'}`
+                : ''}
+            </Text>
             <Pressable onPress={() => setSelected(null)}>
               <Text style={styles.change}>Change</Text>
             </Pressable>
@@ -189,21 +233,54 @@ export default function AddScreen() {
 
       {selected?.type === 'show' && (
         <>
-          <Text style={styles.label}>Season (optional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+          <Text style={styles.label}>What are you logging?</Text>
+          {loadingShowMeta ? (
+            <Text style={styles.metaHint}>Loading seasons…</Text>
+          ) : (
+            <Text style={styles.metaHint}>
+              {seasonCount > 0
+                ? 'Whole show, a single season, or a specific episode.'
+                : 'Pick a season number (episode list uses a default length if unknown).'}
+            </Text>
+          )}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
             <Pressable
-              onPress={() => { setSeason(undefined); setEpisode(undefined); }}
+              onPress={() => {
+                setSeason(undefined);
+                setEpisode(undefined);
+              }}
               style={[styles.smallChip, season == null && styles.smallChipActive]}
             >
-              <Text style={styles.smallChipText}>Whole show</Text>
+              <Text
+                style={[
+                  styles.smallChipText,
+                  season == null && styles.smallChipTextActive,
+                ]}
+              >
+                Whole show
+              </Text>
             </Pressable>
             {seasonOptions.map((s) => (
               <Pressable
                 key={s}
-                onPress={() => { setSeason(s); setEpisode(undefined); }}
+                onPress={() => {
+                  setSeason(s);
+                  setEpisode(undefined);
+                }}
                 style={[styles.smallChip, season === s && styles.smallChipActive]}
               >
-                <Text style={styles.smallChipText}>S{s}</Text>
+                <Text
+                  style={[
+                    styles.smallChipText,
+                    season === s && styles.smallChipTextActive,
+                  ]}
+                >
+                  Season {s}
+                </Text>
               </Pressable>
             ))}
           </ScrollView>
@@ -211,12 +288,23 @@ export default function AddScreen() {
           {season != null && (
             <>
               <Text style={styles.label}>Episode (optional)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipRow}
+              >
                 <Pressable
                   onPress={() => setEpisode(undefined)}
                   style={[styles.smallChip, episode == null && styles.smallChipActive]}
                 >
-                  <Text style={styles.smallChipText}>Whole season</Text>
+                  <Text
+                    style={[
+                      styles.smallChipText,
+                      episode == null && styles.smallChipTextActive,
+                    ]}
+                  >
+                    Whole season
+                  </Text>
                 </Pressable>
                 {episodeOptions.map((e) => (
                   <Pressable
@@ -224,7 +312,14 @@ export default function AddScreen() {
                     onPress={() => setEpisode(e)}
                     style={[styles.smallChip, episode === e && styles.smallChipActive]}
                   >
-                    <Text style={styles.smallChipText}>E{e}</Text>
+                    <Text
+                      style={[
+                        styles.smallChipText,
+                        episode === e && styles.smallChipTextActive,
+                      ]}
+                    >
+                      E{e}
+                    </Text>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -376,20 +471,26 @@ const styles = StyleSheet.create({
   },
   selectedTitle: { ...typography.headline, color: colors.text },
   change: { ...typography.label, color: colors.accent, marginTop: 6 },
-  chipRow: { gap: spacing.sm, paddingVertical: 4 },
+  metaHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+  },
+  chipRow: { gap: spacing.sm, paddingVertical: 4, paddingRight: spacing.lg },
   smallChip: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: radii.pill,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
   smallChipActive: {
-    borderColor: colors.teal,
-    backgroundColor: 'rgba(94,196,184,0.12)',
+    borderColor: colors.accentDim,
+    backgroundColor: colors.accentSoft,
   },
-  smallChipText: { ...typography.caption, color: colors.text },
+  smallChipText: { ...typography.caption, color: colors.textSecondary },
+  smallChipTextActive: { color: colors.accent, fontFamily: 'DMSans_600SemiBold' },
   tagPreview: { ...typography.caption, color: colors.teal, marginTop: spacing.sm },
   error: { ...typography.body, color: colors.coral, marginTop: spacing.md },
   secondaryBtn: {

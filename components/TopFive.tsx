@@ -4,23 +4,29 @@ import { Link } from 'expo-router';
 import { MediaArt } from '@/components/MediaArt';
 import { MediaTypeIcon, labelForMediaFilter } from '@/components/MediaTypeIcon';
 import { colors, radii, spacing, typography, MEDIA_TYPE_LABELS } from '@/constants/theme';
-import { getMediaSync } from '@/services/mediaService';
-import type { TopFiveConfig, TopFiveMode } from '@/types';
+import type { DiaryEntry, TopFiveConfig, TopFiveMode } from '@/types';
+import { slotsForMode } from '@/utils/topFive';
 
 const MODES: TopFiveMode[] = ['mixed', 'movie', 'show', 'book', 'music'];
 
 interface TopFiveProps {
   config: TopFiveConfig;
   onModeChange: (mode: TopFiveMode) => void;
+  diary?: DiaryEntry[];
 }
 
-export function TopFive({ config, onModeChange }: TopFiveProps) {
+/** Profile showcase — mode chips filter what’s shown. Edit picks in Settings. */
+export function TopFive({ config, onModeChange, diary = [] }: TopFiveProps) {
+  const visible = slotsForMode(config, diary);
+
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
         <Text style={styles.heading}>Top Five</Text>
         <Text style={styles.hint}>
-          {config.mode === 'mixed' ? 'One of each type' : `Top ${MEDIA_TYPE_LABELS[config.mode]}`}
+          {config.mode === 'mixed'
+            ? 'One of each type · edit in Settings'
+            : `Top ${MEDIA_TYPE_LABELS[config.mode]} · edit in Settings`}
         </Text>
       </View>
 
@@ -56,26 +62,29 @@ export function TopFive({ config, onModeChange }: TopFiveProps) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.slots}
       >
-        {config.slots.map((slot) => {
-          const media = getMediaSync(slot.mediaId);
-          if (!media) return null;
-          return (
-            <Link key={`${slot.rank}-${slot.mediaId}`} href={`/media/${media.type}/${media.id}`} asChild>
-              <Pressable style={styles.slot}>
-                <Text style={styles.rank}>#{slot.rank}</Text>
-                <MediaArt media={media} size={72} />
-                <Text style={styles.slotTitle} numberOfLines={2}>
-                  {media.title}
-                </Text>
-              </Pressable>
-            </Link>
-          );
-        })}
+        {visible.map((slot) => (
+          <Link
+            key={`${slot.rank}-${slot.mediaId}`}
+            href={`/media/${slot.media.type}/${slot.media.id}`}
+            asChild
+          >
+            <Pressable style={styles.slot}>
+              <Text style={styles.rank}>#{slot.rank}</Text>
+              <MediaArt media={slot.media} size={72} />
+              <Text style={styles.slotTitle} numberOfLines={2}>
+                {slot.media.title}
+              </Text>
+            </Pressable>
+          </Link>
+        ))}
       </ScrollView>
-      {config.slots.length === 0 ? (
-        <Text style={styles.editHint}>No favorites pinned yet.</Text>
+
+      {visible.length === 0 ? (
+        <Text style={styles.empty}>
+          Nothing pinned for this view yet. Open Settings → Top Five to add favorites from your
+          diary.
+        </Text>
       ) : null}
-      <Text style={styles.editHint}>Choosing favorites comes later. The mode is saved on your account.</Text>
     </View>
   );
 }
@@ -146,7 +155,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
   },
-  editHint: {
+  empty: {
     ...typography.caption,
     color: colors.textMuted,
     paddingHorizontal: spacing.lg,

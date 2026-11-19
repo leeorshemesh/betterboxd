@@ -1,0 +1,7 @@
+# Node 22+ required (server uses node:sqlite).
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[variables]
+NODE_ENV = "production"
+ENABLE_SEED = "false"

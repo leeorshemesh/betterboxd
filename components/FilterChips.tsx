@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { MediaTypeIcon, labelForMediaFilter } from '@/components/MediaTypeIcon';
-import { colors, radii, spacing, typography } from '@/constants/theme';
+import { radii, spacing, typography } from '@/constants/theme';
+import { useTheme } from '@/context/Theme';
 import type { FeedFilter } from '@/types';
 
 const FILTERS: FeedFilter[] = ['all', 'movie', 'show', 'book', 'music'];
@@ -14,6 +15,8 @@ interface FilterChipsProps {
 
 /** Wrapping row so chips never collapse under a FlatList above the fold. */
 export function FilterChips({ value, onChange, options = FILTERS }: FilterChipsProps) {
+  const { colors } = useTheme();
+
   return (
     <View style={styles.row}>
       {options.map((opt) => {
@@ -24,7 +27,13 @@ export function FilterChips({ value, onChange, options = FILTERS }: FilterChipsP
           <Pressable
             key={opt}
             onPress={() => onChange(opt)}
-            style={[styles.chip, active && styles.chipActive]}
+            style={[
+              styles.chip,
+              {
+                backgroundColor: active ? colors.accentSoft : colors.surface,
+                borderColor: active ? colors.accentDim : colors.border,
+              },
+            ]}
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
             accessibilityLabel={label}
@@ -32,7 +41,14 @@ export function FilterChips({ value, onChange, options = FILTERS }: FilterChipsP
           >
             <View style={styles.chipInner}>
               <MediaTypeIcon type={opt} size={16} color={tint} />
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: active ? colors.accent : colors.textSecondary },
+                ]}
+              >
+                {label}
+              </Text>
             </View>
           </Pressable>
         );
@@ -55,14 +71,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radii.pill,
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
     justifyContent: 'center',
-  },
-  chipActive: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accentDim,
   },
   chipInner: {
     flexDirection: 'row',
@@ -71,9 +81,5 @@ const styles = StyleSheet.create({
   },
   chipText: {
     ...typography.label,
-    color: colors.textSecondary,
-  },
-  chipTextActive: {
-    color: colors.accent,
   },
 });

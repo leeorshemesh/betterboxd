@@ -1,72 +1,30 @@
 # Betterboxd
 
-Letterboxd-style media diary for **movies, shows, books, and music** — Expo (iOS + web), Phase 1 MVP with mock data.
+Letterboxd-style media diary for **movies, shows, books, and music** — Expo (iOS + Android + web) with a Hono + SQLite API.
 
-## Run
+## Run (local)
 
 From the project root (`betterboxd`):
 
 ```bash
 npm install
-npm start          # Expo dev server (QR for Expo Go)
-npm run web        # Web at http://localhost:8081
-npm run typecheck  # TypeScript check
+npm run server      # Terminal A — API on :8787 (catalog + accounts)
+npm start           # Terminal B — Expo (QR for Expo Go)
+npm run web         # or web at http://localhost:8081
+npm run typecheck
 ```
 
-### Windows (PowerShell)
+Catalog search (TMDB / Open Library / Spotify) is proxied by the API so secrets never ship in the app bundle.
 
-If `npm` fails with **“running scripts is disabled on this system”**, PowerShell is blocking `npm.ps1`. Node is installed; fix it one of these ways:
-
-**Option A — allow npm scripts for your user (recommended, once):**
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Close and reopen the terminal, then use normal commands:
-
-```powershell
-cd C:\Users\leeor\Desktop\Projects\betterboxd
-npm install
-npm run web        # http://localhost:8081
-npm start          # Expo Go on phone
-```
-
-**Option B — call the `.cmd` shims (no policy change):**
-
-```powershell
-cd C:\Users\leeor\Desktop\Projects\betterboxd
-npm.cmd install
-npm.cmd run web
-npm.cmd start
-# or:
-npx.cmd expo start --web
-```
-
-**Option C — use Command Prompt** (`cmd.exe`) instead of PowerShell; plain `npm` works there.
-
-### iOS
-
-- **With a Mac:** `npm run ios` (simulator) or open the project in Xcode after `npx expo prebuild` when you need a native build.
-- **Without a Mac (Windows):** install [Expo Go](https://expo.dev/go) on an iPhone, run `npm start` (or `npm.cmd start`), then scan the QR code (same Wi‑Fi).
-
-### Android
-
-`npm run android` or Expo Go on a device.
-
-## Account server
-
-Profiles, friends, diary entries, reviews, comments, lists, and Top Five are stored by a local API. Catalog search still runs in the app.
-
-Node 22 or newer. From the project root, in a second terminal:
+Node 22 or newer. The SQLite file is `server/data/betterboxd.sqlite` (gitignored).
 
 ```bash
-npm run server
+cd server && npm test   # auth, friends, privacy, feed tests
 ```
 
-The API listens on `http://localhost:8787`. The SQLite file is `server/data/betterboxd.sqlite` and is gitignored.
+### App env
 
-Set the app’s API address in `.env` (see [`.env.example`](.env.example)):
+Root [`.env.example`](.env.example) → `.env`:
 
 ```env
 EXPO_PUBLIC_API_URL=http://localhost:8787
@@ -78,72 +36,105 @@ EXPO_PUBLIC_API_URL=http://localhost:8787
 
 Restart Expo after changing it (`npx expo start -c`).
 
-Dev seed accounts (local only, password `password` for each):
+### Server secrets
+
+Copy [`server/.env.example`](server/.env.example) → `server/.env`:
+
+| Var | Purpose |
+|-----|---------|
+| `TMDB_API_KEY` | Movies / TV |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | Music search |
+| `CORS_ORIGIN` | Comma-separated allowed browser origins |
+| `ENABLE_SEED` | `true` locally for demo users; `false` in production |
+| `PORT` | Default `8787` |
+| `BETTERBOXD_DB_PATH` | Optional absolute SQLite path (default `server/data/betterboxd.sqlite`) |
+
+Books use Open Library (no key). Without TMDB/Spotify keys the API falls back to the mock catalog.
+
+Dev seed accounts (only when `ENABLE_SEED` is on / non-production; password `password` for each):
 
 - `maya_reels` / maya@betterboxd.local — public
 - `j.watches` / jordan@betterboxd.local — private
 - `samreads` / sam@betterboxd.local — public
 
-Maya and Jordan are friends, and Jordan and Sam are friends. Sign up in the app to create your own account, then send a friend request by username.
+Maya and Jordan are friends, and Jordan and Sam are friends. Seed diary entries ship on first boot when seeding is enabled.
 
-## Phase 1 scope
+### Windows (PowerShell)
 
-Five tabs (Feed, Explore, Add, Community placeholder, Profile), review/media detail, mock catalog + social graph, `mediaService` ready for TMDB / Open Library / Spotify later.
+If `npm` fails with **“running scripts is disabled on this system”**, allow scripts once:
 
-## Real catalog data (API keys)
-
-The app still uses **mock** data. Screens talk to [`services/mediaService.ts`](services/mediaService.ts); when adapters are wired, the UI stays the same. Here is what you need to do before asking to connect live APIs.
-
-### 1. Movies & TV — TMDB
-
-1. Create a free account at [themoviedb.org](https://www.themoviedb.org/).
-2. **Settings → API** → request an API key (v3 auth key is enough).
-3. Copy [`.env.example`](.env.example) to `.env` and set:
-
-```env
-EXPO_PUBLIC_TMDB_API_KEY=your_v3_key_here
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-4. Restart Expo so env vars load: `npx expo start -c` (or `npx.cmd expo start -c` on Windows).
+Or call `npm.cmd` / `npx.cmd` instead.
 
-### 2. Books — Open Library
+## Production deploy (dedicated site on Railway)
 
-No API key. The future adapter will call `https://openlibrary.org/search.json` and cover image URLs.
+Betterboxd is meant to live at its **own HTTPS URL** (not inside your portfolio). One Node process serves the API and the exported website (same origin). Phones use the same URL in Safari/Chrome — no App Store build required.
 
-### 3. Music — Spotify
+Config in the repo: [`railway.toml`](railway.toml) (build/start) and [`nixpacks.toml`](nixpacks.toml) (Node 22, `NODE_ENV=production`, `ENABLE_SEED=false`).
 
-1. Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Copy **Client ID** and **Client Secret**.
-3. Put both in `.env` for local/MVP search (Client Credentials):
+### 1. Create the Railway service
 
-```env
-EXPO_PUBLIC_SPOTIFY_CLIENT_ID=your_client_id
-EXPO_PUBLIC_SPOTIFY_CLIENT_SECRET=your_client_secret
+1. New project → deploy from this GitHub repo (or CLI).
+2. Confirm build uses [`railway.toml`](railway.toml): install root + `server/`, then `npm run build:showcase`; start `npm run server:prod`.
+3. Attach a **volume** mounted at `/app/server/data` (Railway’s app root is usually `/app`). That keeps SQLite across restarts. If your mount path differs, set `BETTERBOXD_DB_PATH` to the sqlite file on the volume.
+4. Generate a public domain (or add a custom domain).
+
+### 2. Environment variables (dashboard)
+
+| Variable | Value |
+|----------|--------|
+| `TMDB_API_KEY` | From TMDB |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | From Spotify dashboard |
+| `CORS_ORIGIN` | Your public origin, e.g. `https://betterboxd-production.up.railway.app` (update if you add a custom domain) |
+| `ENABLE_SEED` | `false` |
+| `NODE_ENV` | `production` (Nixpacks sets this) |
+| `PORT` | Railway injects this — do not hardcode |
+
+Do **not** set `EXPO_PUBLIC_TMDB_*` or `EXPO_PUBLIC_SPOTIFY_*`. The web export uses same-origin API (`EXPO_PUBLIC_API_URL` empty during `build:showcase`).
+
+### 3. After deploy — smoke checklist
+
+- Open the Railway URL on desktop: register a new account, Explore search, log a title, check Feed.
+- Open the **same URL on a phone** browser; repeat sign-up / search / log.
+- DevTools → Network: requests go only to your host (no `api.themoviedb.org` / Spotify token from the browser).
+- Locally before/after build: `npm run build:showcase && npm run verify:client-secrets`
+
+Community tab remains a placeholder and does not block accessibility. Link this URL from your portfolio when ready.
+
+### Local one-host dry run
+
+```bash
+npm install
+npm run start:showcase
+# then: npm run verify:client-secrets
 ```
 
-Without the secret, music search falls back to mock data. For a production build, move the secret to a small backend/proxy so it is not embedded in the app binary.
+Auth and `/catalog/*` are rate-limited (in-memory; per instance).
 
-### Security
+## What’s in Phase 1.5
 
-- Only `EXPO_PUBLIC_*` variables are available in the client (visible in the app bundle).
-- `.env` is gitignored — never commit real keys. Use `.env.example` as the template.
+- Auth, diary logging, reviews, comments, friends, privacy-aware feed
+- Explore search via `/catalog` + **For you** recommendations
+- Lists, Top Five picks, friend profiles, Settings with theme presets
+- Community tab remains a placeholder
 
-### Wired providers
+## Themes
 
-| Type | Source | Needs |
-|------|--------|--------|
-| Movies / TV | TMDB | `EXPO_PUBLIC_TMDB_API_KEY` |
-| Books | Open Library | nothing |
-| Music | Spotify | Client ID + Secret (else mock) |
+Settings → Appearance offers three presets (saved on device):
 
-Restart with `npx expo start -c` after editing `.env`.
+1. **Midnight Coral** (default) — ink navy + coral accent
+2. **Amber Stage** — near-black + gold accent
+3. **Teal Reel** — slate + teal accent
 
 ## Project layout
 
 - `app/` — Expo Router screens
-- `components/` — shared UI (stars, art, feed/timeline rows, media-type icons)
-- `data/mock/` — catalog, users, reviews, comments, lists
-- `services/mediaService.ts` — catalog abstraction (mock now)
-- `context/AppState.tsx` — in-memory reviews/lists/top-five
-- `constants/theme.ts` — visual tokens
-- `.env.example` — template for future API keys
+- `components/` — shared UI
+- `context/` — Auth, AppState, Theme
+- `services/` — API client, media proxy, recommendations, preferences
+- `data/mock/catalog.ts` — client-side sync fallback snapshots
+- `server/` — Hono API, catalog proxy, SQLite
+- `constants/theme.ts` — visual tokens and theme presets

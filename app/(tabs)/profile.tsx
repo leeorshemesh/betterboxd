@@ -8,7 +8,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, type Href } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { Avatar } from '@/components/Avatar';
@@ -19,8 +19,16 @@ import { useAppState } from '@/context/AppState';
 
 export default function ProfileScreen() {
   const listRef = useRef<FlatList>(null);
-  const { currentUser, friends, diary, topFive, setTopFiveMode, getReview, getUserComments } =
-    useAppState();
+  const {
+    currentUser,
+    friends,
+    diary,
+    topFive,
+    setTopFiveMode,
+    getReview,
+    getUserComments,
+    deleteDiary,
+  } = useAppState();
 
   const myComments = getUserComments(currentUser.id);
   const reviewCount = diary.filter((entry) => entry.reviewId).length;
@@ -51,6 +59,12 @@ export default function ProfileScreen() {
                 <Text style={styles.statLabel}>Friends</Text>
               </Pressable>
             </Link>
+            <Link href={'/lists' as Href} asChild>
+              <Pressable style={styles.stat}>
+                <Text style={styles.statNum}>Lists</Text>
+                <Text style={styles.statLabel}>Queues</Text>
+              </Pressable>
+            </Link>
             <Link href="/my-comments" asChild>
               <Pressable style={styles.stat}>
                 <Text style={styles.statNum}>{myComments.length}</Text>
@@ -65,7 +79,7 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <TopFive config={topFive} onModeChange={setTopFiveMode} />
+      <TopFive config={topFive} onModeChange={setTopFiveMode} diary={diary} />
 
       <View style={styles.timelineHeader}>
         <Text style={styles.timelineTitle}>Timeline</Text>
@@ -91,6 +105,7 @@ export default function ProfileScreen() {
             review={item.reviewId ? getReview(item.reviewId) : undefined}
             isFirst={index === 0}
             isLast={index === diary.length - 1}
+            onDelete={(entryId) => void deleteDiary(entryId)}
           />
         )}
         ListEmptyComponent={

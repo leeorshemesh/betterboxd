@@ -1,5 +1,7 @@
 import type { MediaItem } from '@/types';
 
+const TMDB = 'https://image.tmdb.org/t/p/w342';
+
 export const mockCatalog: MediaItem[] = [
   // Movies
   {
@@ -10,6 +12,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2019,
     genres: ['thriller', 'drama', 'dark comedy'],
     artColor: '#3D1F1F',
+    imageUrl: `${TMDB}/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg`,
   },
   {
     id: 'movie-arrival',
@@ -19,6 +22,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2016,
     genres: ['sci-fi', 'drama'],
     artColor: '#1A2A3A',
+    imageUrl: `${TMDB}/pEzNVQfdzYDzVK0XqxERIw2x2se.jpg`,
   },
   {
     id: 'movie-portrait',
@@ -28,6 +32,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2019,
     genres: ['romance', 'drama', 'period'],
     artColor: '#4A2C1A',
+    imageUrl: `${TMDB}/2LquGwEhbg3soxSCs9VNyh5VJd9.jpg`,
   },
   {
     id: 'movie-everything',
@@ -37,6 +42,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2022,
     genres: ['sci-fi', 'comedy', 'action'],
     artColor: '#2A1A3A',
+    imageUrl: `${TMDB}/u68AjlvlutfEIcpmbYpKcdi09ut.jpg`,
   },
   {
     id: 'movie-dune',
@@ -46,6 +52,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2024,
     genres: ['sci-fi', 'adventure'],
     artColor: '#3A2E1A',
+    imageUrl: `${TMDB}/6izwz7rsy95ARzTR3poZ8H6c5pp.jpg`,
   },
   {
     id: 'movie-aftersun',
@@ -55,6 +62,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2022,
     genres: ['drama'],
     artColor: '#1A3A3A',
+    imageUrl: `${TMDB}/evKz85EKouVbIr51zy5fOtpNRPg.jpg`,
   },
 
   // Shows
@@ -68,6 +76,7 @@ export const mockCatalog: MediaItem[] = [
     artColor: '#1F2A1F',
     seasons: 4,
     episodesPerSeason: 10,
+    imageUrl: `${TMDB}/z0XiwdrCQ9yVIr4O0pxzaAYRxdW.jpg`,
   },
   {
     id: 'show-andor',
@@ -79,6 +88,7 @@ export const mockCatalog: MediaItem[] = [
     artColor: '#1A1A2A',
     seasons: 2,
     episodesPerSeason: 12,
+    imageUrl: `${TMDB}/khZqmwHQicTYoS7Flreb9EddFZC.jpg`,
   },
   {
     id: 'show-bear',
@@ -90,6 +100,7 @@ export const mockCatalog: MediaItem[] = [
     artColor: '#3A1A1A',
     seasons: 3,
     episodesPerSeason: 10,
+    imageUrl: `${TMDB}/eKfVzzEazSIjJMrw9ADa2x8ksLz.jpg`,
   },
   {
     id: 'show-severance',
@@ -101,6 +112,7 @@ export const mockCatalog: MediaItem[] = [
     artColor: '#2A2A2A',
     seasons: 2,
     episodesPerSeason: 10,
+    imageUrl: `${TMDB}/pPHpeI2X1qEd1CS1SeyrdhZ4qnT.jpg`,
   },
   {
     id: 'show-shogun',
@@ -112,6 +124,7 @@ export const mockCatalog: MediaItem[] = [
     artColor: '#3A2020',
     seasons: 1,
     episodesPerSeason: 10,
+    imageUrl: `${TMDB}/7O4iVfOMQmdCSxhOg1WnzG1AgYT.jpg`,
   },
 
   // Books
@@ -123,6 +136,7 @@ export const mockCatalog: MediaItem[] = [
     year: 2021,
     genres: ['literary', 'sci-fi'],
     artColor: '#2A3A2A',
+    imageUrl: 'https://covers.openlibrary.org/b/id/10648686-M.jpg',
   },
   {
     id: 'book-project-hail-mary',
