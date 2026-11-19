@@ -26,38 +26,94 @@ export interface MediaService {
 
 let cachedProviderStatus: { tmdb: boolean; openLibrary: boolean; spotify: boolean } | null = null;
 
-/** Prefer exact title matches, items with art, then stable title order; drop duplicate ids. */
+function normalizeTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/^the\s+/, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenOverlap(a: string, b: string): number {
+  const at = new Set(a.split(' ').filter(Boolean));
+  const bt = b.split(' ').filter(Boolean);
+  if (at.size === 0 || bt.length === 0) return 0;
+  let hits = 0;
+  for (const token of bt) {
+    if (at.has(token)) hits += 1;
+  }
+  return hits / Math.max(at.size, bt.length);
+}
+
+/** Prefer exact / prefix / token matches, then popularity, then provider order. */
 export function rankAndDedupe(items: MediaItem[], query = ''): MediaItem[] {
-  const q = query.trim().toLowerCase();
+  const qRaw = query.trim().toLowerCase();
+  const q = normalizeTitle(query);
   const seen = new Set<string>();
-  const unique: MediaItem[] = [];
-  for (const item of items) {
+  const unique: Array<MediaItem & { __index: number }> = [];
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
     if (seen.has(item.id)) continue;
     seen.add(item.id);
-    unique.push(item);
+    unique.push({ ...item, __index: i });
+  }
+
+  if (!q) {
+    return unique
+      .sort((a, b) => {
+        const pop = (b.popularity ?? 0) - (a.popularity ?? 0);
+        if (pop !== 0) return pop;
+        return a.__index - b.__index;
+      })
+      .map(({ __index: _i, ...item }) => item);
   }
 
   const score = (item: MediaItem): number => {
     let s = 0;
-    const title = item.title.toLowerCase();
-    if (q) {
-      if (title === q) s += 100;
-      else if (title.startsWith(q)) s += 60;
-      else if (title.includes(q)) s += 30;
-      if (item.subtitle?.toLowerCase().includes(q)) s += 10;
-      if (item.artist?.toLowerCase().includes(q)) s += 10;
+    const title = normalizeTitle(item.title);
+    const subtitle = normalizeTitle(item.subtitle ?? '');
+    const artist = normalizeTitle(item.artist ?? '');
+
+    if (title === q) s += 200;
+    else if (title.startsWith(q)) s += 120;
+    else if (q.startsWith(title) && title.length >= 3) s += 90;
+    else if (title.includes(q)) s += 50;
+    else s += Math.round(tokenOverlap(title, q) * 40);
+
+    if (artist === q) s += 180;
+    else if (artist.startsWith(q)) s += 100;
+    else if (artist.includes(q)) s += 40;
+
+    if (subtitle === q) s += 40;
+    else if (subtitle.includes(q)) s += 15;
+
+    if (item.type === 'music' && item.musicKind === 'artist') {
+      if (title === q || artist === q) s += 80;
+      else if (title.startsWith(q) || artist.startsWith(q)) s += 40;
     }
-    if (item.imageUrl) s += 8;
+
+    if (item.imageUrl) s += 6;
     if (item.year) s += 2;
     if (item.genres.length > 0) s += 1;
+    if (typeof item.popularity === 'number') {
+      s += Math.min(25, Math.round(item.popularity / 8));
+    }
+    if (item.title.toLowerCase() === qRaw) s += 20;
     return s;
   };
 
-  return unique.sort((a, b) => {
-    const diff = score(b) - score(a);
-    if (diff !== 0) return diff;
-    return a.title.localeCompare(b.title);
-  });
+  return unique
+    .sort((a, b) => {
+      const diff = score(b) - score(a);
+      if (Math.abs(diff) > 2) return diff;
+      const pop = (b.popularity ?? 0) - (a.popularity ?? 0);
+      if (pop !== 0) return pop;
+      return a.__index - b.__index;
+    })
+    .map(({ __index: _i, ...item }) => item);
 }
 
 export function inferMediaType(id: string): MediaType {
@@ -123,6 +179,21 @@ const apiMediaService: MediaService = {
     }
   },
 };
+
+export async function getSeasonEpisodeCount(
+  mediaId: string,
+  season: number,
+): Promise<number | null> {
+  const type = inferMediaType(mediaId);
+  try {
+    const data = await api<{ episodeCount: number }>(
+      `/catalog/${type}/${encodeURIComponent(mediaId)}/seasons/${season}`,
+    );
+    return data.episodeCount;
+  } catch {
+    return null;
+  }
+}
 
 export const mediaService: MediaService = apiMediaService;
 

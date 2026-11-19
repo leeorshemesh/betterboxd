@@ -11,6 +11,7 @@ type SpotifyArtistRef = { name: string };
 type Track = {
   id: string;
   name: string;
+  popularity?: number;
   artists?: SpotifyArtistRef[];
   album?: { name?: string; images?: SpotifyImage[]; release_date?: string };
 };
@@ -18,6 +19,7 @@ type Track = {
 type Album = {
   id: string;
   name: string;
+  popularity?: number;
   artists?: SpotifyArtistRef[];
   images?: SpotifyImage[];
   release_date?: string;
@@ -26,6 +28,7 @@ type Album = {
 type Artist = {
   id: string;
   name: string;
+  popularity?: number;
   images?: SpotifyImage[];
   genres?: string[];
 };
@@ -111,6 +114,7 @@ function trackToItem(t: Track): MediaItem {
     artist: t.artists?.[0]?.name,
     album: t.album?.name,
     musicKind: 'song',
+    popularity: t.popularity,
   };
 }
 
@@ -127,6 +131,7 @@ function albumToItem(a: Album): MediaItem {
     imageUrl: a.images?.[0]?.url,
     artist: a.artists?.[0]?.name,
     musicKind: 'album',
+    popularity: a.popularity,
   };
 }
 
@@ -142,6 +147,7 @@ function artistToItem(a: Artist): MediaItem {
     imageUrl: a.images?.[0]?.url,
     artist: a.name,
     musicKind: 'artist',
+    popularity: a.popularity,
   };
 }
 
@@ -158,10 +164,11 @@ export async function spotifySearch(query: string): Promise<MediaItem[]> {
     limit: '8',
   });
 
+  // Artists first so exact name matches aren't buried under tracks/albums.
   return [
-    ...(data.tracks?.items ?? []).map(trackToItem),
-    ...(data.albums?.items ?? []).map(albumToItem),
     ...(data.artists?.items ?? []).map(artistToItem),
+    ...(data.albums?.items ?? []).map(albumToItem),
+    ...(data.tracks?.items ?? []).map(trackToItem),
   ];
 }
 

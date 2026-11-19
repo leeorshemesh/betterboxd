@@ -20,12 +20,16 @@ export class ApiError extends Error {
 interface RequestOptions {
   method?: string;
   body?: unknown;
+  /** When true, body is sent as FormData and Content-Type is left for the runtime. */
+  formData?: boolean;
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const token = await getToken();
   const headers: Record<string, string> = {};
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (options.body !== undefined && !options.formData) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;
@@ -33,7 +37,12 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     response = await fetch(`${API_URL}${path}`, {
       method: options.method ?? (options.body !== undefined ? 'POST' : 'GET'),
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body:
+        options.body === undefined
+          ? undefined
+          : options.formData
+            ? (options.body as FormData)
+            : JSON.stringify(options.body),
     });
   } catch {
     throw new ApiError(0, `Can't reach the API at ${API_URL}. Start it with npm run server.`);
@@ -45,4 +54,11 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     throw new ApiError(response.status, payload.error ?? 'Request failed');
   }
   return payload as T;
+}
+
+export function resolveMediaUrl(pathOrUrl?: string | null): string | undefined {
+  if (!pathOrUrl) return undefined;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  if (pathOrUrl.startsWith('/')) return `${API_URL}${pathOrUrl}`;
+  return pathOrUrl;
 }

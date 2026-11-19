@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
@@ -23,21 +23,29 @@ export function migrate(): void {
       applied_at TEXT NOT NULL
     )
   `);
-  const id = '001_init';
-  const applied = db.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(id);
-  if (applied) return;
-  const sql = readFileSync(join(root, '..', 'migrations', '001_init.sql'), 'utf8');
-  db.exec('BEGIN');
-  try {
-    db.exec(sql);
-    db.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(
-      id,
-      new Date().toISOString(),
-    );
-    db.exec('COMMIT');
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
+
+  const migrationsDir = join(root, '..', 'migrations');
+  const files = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith('.sql'))
+    .sort();
+
+  for (const file of files) {
+    const id = file.replace(/\.sql$/, '');
+    const applied = db.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(id);
+    if (applied) continue;
+    const sql = readFileSync(join(migrationsDir, file), 'utf8');
+    db.exec('BEGIN');
+    try {
+      db.exec(sql);
+      db.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(
+        id,
+        new Date().toISOString(),
+      );
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
   }
 }
 

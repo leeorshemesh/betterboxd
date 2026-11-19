@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 
-import { TopFiveEditor } from '@/components/TopFiveEditor';
+import { AvatarPicker } from '@/components/AvatarPicker';
 import { THEME_PRESETS, radii, spacing, typography, MEDIA_TYPE_LABELS } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
 import { useAuth } from '@/context/Auth';
@@ -22,15 +22,14 @@ import {
   type AppPreferences,
 } from '@/services/preferences';
 import type { ThemePresetId } from '@/constants/theme';
-import type { FeedFilter, MediaType, TopFiveMode } from '@/types';
+import type { FeedFilter, MediaType } from '@/types';
 
 const FEED_FILTERS: FeedFilter[] = ['all', 'movie', 'show', 'book', 'music'];
 const ADD_TYPES: MediaType[] = ['movie', 'show', 'book', 'music'];
 
 export default function SettingsScreen() {
   const { signOut } = useAuth();
-  const { currentUser, updateProfile, diary, topFive, setTopFiveMode, setTopFiveSlots } =
-    useAppState();
+  const { currentUser, updateProfile } = useAppState();
   const { preset, setPreset, colors } = useTheme();
   const styles = useThemedStyles(
     useCallback(
@@ -172,19 +171,10 @@ export default function SettingsScreen() {
     setPrefs(next);
   };
 
-  const onTopFiveMode = (mode: TopFiveMode) => {
-    setTopFiveMode(mode);
-    void updatePreferences({ topFiveMode: mode }).then(setPrefs);
-  };
-
-  const onTopFiveSave = async (mode: TopFiveMode, slots: typeof topFive.slots) => {
-    await setTopFiveSlots(mode, slots);
-    void updatePreferences({ topFiveMode: mode }).then(setPrefs);
-  };
-
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <Text style={styles.section}>Profile</Text>
+      <AvatarPicker size={88} />
       <Text style={styles.label}>Display name</Text>
       <TextInput
         value={displayName}
@@ -330,14 +320,6 @@ export default function SettingsScreen() {
 
         </>
       ) : null}
-
-      <Text style={styles.section}>Top Five</Text>
-      <TopFiveEditor
-        config={topFive}
-        diary={diary}
-        onModeChange={onTopFiveMode}
-        onSave={onTopFiveSave}
-      />
 
       <Text style={styles.section}>Shortcuts</Text>
       <Link href="/friends" asChild>

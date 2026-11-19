@@ -17,7 +17,8 @@ function isApiPath(path: string): boolean {
     path.startsWith('/users') ||
     path.startsWith('/reviews') ||
     path.startsWith('/media') ||
-    path.startsWith('/me')
+    path.startsWith('/me') ||
+    path.startsWith('/uploads')
   );
 }
 

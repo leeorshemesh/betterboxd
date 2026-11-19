@@ -4,6 +4,7 @@ export interface PublicUser {
   displayName: string;
   avatarColor: string;
   avatarInitials: string;
+  avatarUrl?: string | null;
   bio?: string;
   isPublic: boolean;
   friendIds: string[];
@@ -73,6 +74,7 @@ export interface UserRow {
   display_name: string;
   avatar_color: string;
   avatar_initials: string;
+  avatar_url?: string | null;
   bio: string | null;
   is_public: number;
   created_at: string;
@@ -126,6 +128,7 @@ export interface ReviewRow {
   display_name: string;
   avatar_color: string;
   avatar_initials: string;
+  avatar_url?: string | null;
   bio: string | null;
   is_public: number;
   interaction_count: number;
@@ -141,6 +144,7 @@ export interface CommentRow {
   display_name: string;
   avatar_color: string;
   avatar_initials: string;
+  avatar_url?: string | null;
   bio: string | null;
   is_public: number;
   review_author_public: number;
@@ -164,6 +168,7 @@ export function toUser(row: UserRow, friendIds: string[] = [], includeBio = true
     displayName: row.display_name,
     avatarColor: row.avatar_color,
     avatarInitials: row.avatar_initials,
+    avatarUrl: row.avatar_url ?? null,
     isPublic: row.is_public === 1,
     friendIds,
   };
@@ -226,6 +231,7 @@ export function toReview(row: ReviewRow): ReviewJson {
       display_name: row.display_name,
       avatar_color: row.avatar_color,
       avatar_initials: row.avatar_initials,
+      avatar_url: row.avatar_url,
       bio: row.bio,
       is_public: row.is_public,
       created_at: row.created_at,
@@ -270,6 +276,7 @@ export function toComment(row: CommentRow): CommentJson {
         display_name: row.display_name,
         avatar_color: row.avatar_color,
         avatar_initials: row.avatar_initials,
+        avatar_url: row.avatar_url,
         bio: row.bio,
         is_public: row.is_public,
         created_at: row.created_at,

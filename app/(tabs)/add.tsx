@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { MediaArt } from '@/components/MediaArt';
 import { MediaTypeIcon } from '@/components/MediaTypeIcon';
@@ -15,7 +15,7 @@ import { StarRating } from '@/components/StarRating';
 import { colors, radii, spacing, typography, MEDIA_TYPE_SINGULAR } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
 import { ApiError } from '@/services/api';
-import { mediaService } from '@/services/mediaService';
+import { getSeasonEpisodeCount, mediaService } from '@/services/mediaService';
 import { loadPreferences } from '@/services/preferences';
 import type { MediaItem, MediaType, MusicTargetKind } from '@/types';
 
@@ -28,8 +28,15 @@ function today(): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+function parseMediaType(value: string | string[] | undefined): MediaType | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === 'movie' || raw === 'show' || raw === 'book' || raw === 'music') return raw;
+  return null;
+}
+
 export default function AddScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mediaId?: string; type?: string }>();
   const { logTitle } = useAppState();
 
   const [mediaType, setMediaType] = useState<MediaType>('movie');
@@ -38,6 +45,7 @@ export default function AddScreen() {
   const [selected, setSelected] = useState<MediaItem | null>(null);
   const [season, setSeason] = useState<number | undefined>();
   const [episode, setEpisode] = useState<number | undefined>();
+  const [episodeCount, setEpisodeCount] = useState<number | undefined>();
   const [musicKind, setMusicKind] = useState<MusicTargetKind | undefined>();
   const [loggedOn, setLoggedOn] = useState(today);
   const [rating, setRating] = useState(4);
@@ -46,37 +54,116 @@ export default function AddScreen() {
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingShowMeta, setLoadingShowMeta] = useState(false);
+  const [prefsReady, setPrefsReady] = useState(false);
+  const suppressTypeReset = useRef(false);
 
   useEffect(() => {
-    void loadPreferences().then((prefs) => setMediaType(prefs.defaultAddType));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    mediaService.search({ query, type: mediaType }).then((items) => {
-      if (!cancelled) setResults(items);
+    void loadPreferences().then((prefs) => {
+      const paramType = parseMediaType(params.type);
+      if (!paramType) setMediaType(prefs.defaultAddType);
+      setPrefsReady(true);
     });
+  }, [params.type]);
+
+  useEffect(() => {
+    const mediaId = Array.isArray(params.mediaId) ? params.mediaId[0] : params.mediaId;
+    const paramType = parseMediaType(params.type);
+    if (!mediaId || !prefsReady) return;
+
+    let cancelled = false;
+    suppressTypeReset.current = true;
+    if (paramType) setMediaType(paramType);
+    setQuery('');
+    setSeason(undefined);
+    setEpisode(undefined);
+    setEpisodeCount(undefined);
+    setLoadingShowMeta(true);
+
+    void (async () => {
+      try {
+        const item = await mediaService.getById(mediaId);
+        if (cancelled || !item) return;
+        suppressTypeReset.current = true;
+        setMediaType(item.type);
+        if (item.type === 'music') setMusicKind(item.musicKind);
+        else setMusicKind(undefined);
+        if (item.type === 'show' && (!item.seasons || !item.episodesBySeason)) {
+          const detailed = await mediaService.getById(item.id);
+          if (!cancelled) setSelected(detailed ?? item);
+        } else {
+          setSelected(item);
+        }
+      } finally {
+        if (!cancelled) setLoadingShowMeta(false);
+      }
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [query, mediaType]);
+  }, [params.mediaId, params.type, prefsReady]);
 
   useEffect(() => {
+    if (selected) return;
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      void mediaService.search({ query, type: mediaType }).then((items) => {
+        if (!cancelled) setResults(items);
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [query, mediaType, selected]);
+
+  useEffect(() => {
+    if (suppressTypeReset.current) {
+      suppressTypeReset.current = false;
+      return;
+    }
     setSelected(null);
     setSeason(undefined);
     setEpisode(undefined);
+    setEpisodeCount(undefined);
     setMusicKind(undefined);
     setQuery('');
     setLoadingShowMeta(false);
   }, [mediaType]);
 
+  useEffect(() => {
+    if (selected?.type !== 'show' || season == null) {
+      setEpisodeCount(undefined);
+      return;
+    }
+    const fromDetail = selected.episodesBySeason?.[String(season)];
+    if (fromDetail && fromDetail > 0) {
+      setEpisodeCount(fromDetail);
+      return;
+    }
+    let cancelled = false;
+    void getSeasonEpisodeCount(selected.id, season).then((count) => {
+      if (cancelled) return;
+      if (count && count > 0) setEpisodeCount(count);
+      else if (selected.episodesPerSeason && selected.episodesPerSeason > 0) {
+        setEpisodeCount(selected.episodesPerSeason);
+      } else {
+        setEpisodeCount(24);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, season]);
+
   const selectTitle = async (item: MediaItem) => {
     setSeason(undefined);
     setEpisode(undefined);
+    setEpisodeCount(undefined);
     if (item.type === 'music') setMusicKind(item.musicKind);
     else setMusicKind(undefined);
 
-    if (item.type === 'show' && !item.seasons) {
+    if (item.type === 'show' && (!item.seasons || !item.episodesBySeason)) {
       setSelected(item);
       setLoadingShowMeta(true);
       try {
@@ -104,7 +191,6 @@ export default function AddScreen() {
     if (seasonCount > 0) {
       return Array.from({ length: seasonCount }, (_, i) => i + 1);
     }
-    // Fallback when provider didn't return a season count — still allow S1–S20.
     if (selected?.type === 'show') {
       return Array.from({ length: 20 }, (_, i) => i + 1);
     }
@@ -113,12 +199,9 @@ export default function AddScreen() {
 
   const episodeOptions = useMemo(() => {
     if (season == null) return [];
-    const count =
-      selected?.episodesPerSeason && selected.episodesPerSeason > 0
-        ? selected.episodesPerSeason
-        : 24;
+    const count = episodeCount && episodeCount > 0 ? episodeCount : 24;
     return Array.from({ length: count }, (_, i) => i + 1);
-  }, [selected, season]);
+  }, [season, episodeCount]);
 
   const dateValid = /^\d{4}-\d{2}-\d{2}$/.test(loggedOn);
   const canLog = !!selected && dateValid && !posting;

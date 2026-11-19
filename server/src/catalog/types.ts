@@ -12,6 +12,8 @@ export interface MediaItem {
   imageUrl?: string;
   seasons?: number;
   episodesPerSeason?: number;
+  episodesBySeason?: Record<string, number>;
+  popularity?: number;
   artist?: string;
   album?: string;
   musicKind?: MusicKind;

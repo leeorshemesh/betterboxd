@@ -37,14 +37,14 @@ interface ListRow {
   kind: 'to-watch' | 'to-read' | 'to-listen' | 'custom';
 }
 
-const USER_COLUMNS = `id, email, username, password_hash, display_name, avatar_color, avatar_initials, bio, is_public, created_at`;
+const USER_COLUMNS = `id, email, username, password_hash, display_name, avatar_color, avatar_initials, avatar_url, bio, is_public, created_at`;
 
 const REVIEW_SELECT = `
   SELECT
     r.id, r.user_id, r.diary_entry_id, r.rating, r.body, r.tags_json, r.created_at,
     d.media_id, d.media_type, d.title, d.subtitle, d.year, d.art_color, d.image_url,
     d.artist, d.album, d.genres_json, d.logged_on, d.season, d.episode, d.music_kind,
-    u.username, u.display_name, u.avatar_color, u.avatar_initials, u.bio, u.is_public,
+    u.username, u.display_name, u.avatar_color, u.avatar_initials, u.avatar_url, u.bio, u.is_public,
     (SELECT COUNT(*) FROM comments c WHERE c.review_id = r.id) AS interaction_count
   FROM reviews r
   JOIN diary_entries d ON d.id = r.diary_entry_id
@@ -64,7 +64,7 @@ const DIARY_SELECT = `
 const COMMENT_SELECT = `
   SELECT
     c.id, c.review_id, c.user_id, c.body, c.created_at,
-    u.username, u.display_name, u.avatar_color, u.avatar_initials, u.bio, u.is_public,
+    u.username, u.display_name, u.avatar_color, u.avatar_initials, u.avatar_url, u.bio, u.is_public,
     author.is_public AS review_author_public,
     d.title AS media_title
   FROM comments c
@@ -157,7 +157,13 @@ function createDefaults(userId: string): void {
       kind,
     ]);
   }
-  run(`INSERT INTO top_five (user_id, mode, slots_json) VALUES (?, 'mixed', '[]')`, [userId]);
+  run(
+    `INSERT INTO top_five (user_id, mode, slots_json, slots_by_mode_json) VALUES (?, 'mixed', '[]', ?)`,
+    [
+      userId,
+      JSON.stringify({ mixed: [], movie: [], show: [], book: [], music: [] }),
+    ],
+  );
 }
 
 export function insertUser(input: {
@@ -659,44 +665,123 @@ export function removeFromList(userId: string, mediaId: string): void {
   );
 }
 
-export function topFiveFor(userId: string): { mode: TopMode; slots: TopSlot[] } {
-  const row = get<{ mode: string; slots_json: string }>(
-    `SELECT mode, slots_json FROM top_five WHERE user_id = ?`,
+type TopFivePayload = {
+  mode: TopMode;
+  slotsByMode: Record<TopMode, TopSlot[]>;
+};
+
+const EMPTY_SLOTS_BY_MODE = (): Record<TopMode, TopSlot[]> => ({
+  mixed: [],
+  movie: [],
+  show: [],
+  book: [],
+  music: [],
+});
+
+function isTopSlot(value: unknown): value is TopSlot {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    typeof (value as TopSlot).mediaId === 'string' &&
+    typeof (value as TopSlot).rank === 'number'
+  );
+}
+
+function mediaTypeFromId(mediaId: string): TopMode | undefined {
+  if (mediaId.includes('show') || mediaId.startsWith('tmdb-show-')) return 'show';
+  if (mediaId.includes('book') || mediaId.startsWith('ol-book-')) return 'book';
+  if (mediaId.includes('music') || mediaId.startsWith('spotify-')) return 'music';
+  if (mediaId.includes('movie') || mediaId.startsWith('tmdb-movie-')) return 'movie';
+  return undefined;
+}
+
+function parseSlotList(value: unknown): TopSlot[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isTopSlot).slice(0, 5);
+}
+
+function migrateLegacySlots(slots: TopSlot[]): Record<TopMode, TopSlot[]> {
+  const byMode = EMPTY_SLOTS_BY_MODE();
+  for (const slot of slots) {
+    const type = mediaTypeFromId(slot.mediaId);
+    if (!type || type === 'mixed') continue;
+    if (byMode[type].length >= 5) continue;
+    byMode[type].push({ mediaId: slot.mediaId, rank: byMode[type].length + 1 });
+  }
+  // Best-effort mixed list from legacy shared slots (up to 5).
+  byMode.mixed = slots.slice(0, 5).map((slot, index) => ({
+    mediaId: slot.mediaId,
+    rank: index + 1,
+  }));
+  return byMode;
+}
+
+export function topFiveFor(userId: string): TopFivePayload {
+  const row = get<{ mode: string; slots_json: string; slots_by_mode_json: string | null }>(
+    `SELECT mode, slots_json, slots_by_mode_json FROM top_five WHERE user_id = ?`,
     [userId],
   );
-  if (!row) return { mode: 'mixed', slots: [] };
-  let slots: TopSlot[] = [];
-  try {
-    const parsed = JSON.parse(row.slots_json) as unknown;
-    if (Array.isArray(parsed)) {
-      slots = parsed.filter(
-        (slot): slot is TopSlot =>
-          Boolean(slot) &&
-          typeof slot === 'object' &&
-          typeof (slot as TopSlot).mediaId === 'string' &&
-          typeof (slot as TopSlot).rank === 'number',
-      );
-    }
-  } catch {
-    slots = [];
-  }
+  if (!row) return { mode: 'mixed', slotsByMode: EMPTY_SLOTS_BY_MODE() };
   const mode = (['mixed', 'movie', 'show', 'book', 'music'] as const).includes(row.mode as TopMode)
     ? (row.mode as TopMode)
     : 'mixed';
-  return { mode, slots };
+
+  let slotsByMode = EMPTY_SLOTS_BY_MODE();
+  let parsedModes: unknown;
+  try {
+    parsedModes = row.slots_by_mode_json ? JSON.parse(row.slots_by_mode_json) : null;
+  } catch {
+    parsedModes = null;
+  }
+
+  if (parsedModes && typeof parsedModes === 'object' && !Array.isArray(parsedModes)) {
+    const record = parsedModes as Record<string, unknown>;
+    for (const key of ['mixed', 'movie', 'show', 'book', 'music'] as const) {
+      slotsByMode[key] = parseSlotList(record[key]);
+    }
+  } else {
+    let legacy: TopSlot[] = [];
+    try {
+      const parsed = JSON.parse(row.slots_json) as unknown;
+      legacy = parseSlotList(parsed);
+    } catch {
+      legacy = [];
+    }
+    slotsByMode = migrateLegacySlots(legacy);
+    run(`UPDATE top_five SET slots_by_mode_json = ? WHERE user_id = ?`, [
+      JSON.stringify(slotsByMode),
+      userId,
+    ]);
+  }
+
+  return { mode, slotsByMode };
 }
 
-export function updateTopFive(userId: string, mode: TopMode, slots?: TopSlot[]): { mode: TopMode; slots: TopSlot[] } {
+export function updateTopFive(
+  userId: string,
+  mode: TopMode,
+  slots?: TopSlot[],
+): TopFivePayload {
+  const current = topFiveFor(userId);
   if (slots) {
-    run(`UPDATE top_five SET mode = ?, slots_json = ? WHERE user_id = ?`, [
+    const next = { ...current.slotsByMode, [mode]: parseSlotList(slots) };
+    run(`UPDATE top_five SET mode = ?, slots_by_mode_json = ?, slots_json = ? WHERE user_id = ?`, [
       mode,
-      JSON.stringify(slots),
+      JSON.stringify(next),
+      JSON.stringify(next[mode]),
       userId,
     ]);
   } else {
     run(`UPDATE top_five SET mode = ? WHERE user_id = ?`, [mode, userId]);
   }
   return topFiveFor(userId);
+}
+
+export function setUserAvatarUrl(userId: string, avatarUrl: string | null): UserRow {
+  run(`UPDATE users SET avatar_url = ? WHERE id = ?`, [avatarUrl, userId]);
+  const user = findUserById(userId);
+  if (!user) throw new HttpError(404, 'Account not found');
+  return user;
 }
 
 export function accountPayload(userId: string) {

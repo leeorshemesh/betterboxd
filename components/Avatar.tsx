@@ -1,15 +1,17 @@
-import { StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Image, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import { typography } from '@/constants/theme';
+import { resolveMediaUrl } from '@/services/api';
 import type { User } from '@/types';
 
 interface AvatarProps {
-  user: Pick<User, 'avatarColor' | 'avatarInitials'>;
+  user: Pick<User, 'avatarColor' | 'avatarInitials' | 'avatarUrl'>;
   size?: number;
   style?: ViewStyle;
 }
 
 export function Avatar({ user, size = 40, style }: AvatarProps) {
+  const uri = resolveMediaUrl(user.avatarUrl);
   return (
     <View
       style={[
@@ -23,7 +25,15 @@ export function Avatar({ user, size = 40, style }: AvatarProps) {
         style,
       ]}
     >
-      <Text style={[styles.initials, { fontSize: size * 0.32 }]}>{user.avatarInitials}</Text>
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size, borderRadius: size / 2 }}
+          accessibilityIgnoresInvertColors
+        />
+      ) : (
+        <Text style={[styles.initials, { fontSize: size * 0.32 }]}>{user.avatarInitials}</Text>
+      )}
     </View>
   );
 }
@@ -34,6 +44,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(240,242,236,0.15)',
+    overflow: 'hidden',
   },
   initials: {
     ...typography.label,

@@ -36,7 +36,14 @@
           "backgroundColor": "#121410"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Betterboxd to access your photos for a profile picture.",
+          "cameraPermission": "Allow Betterboxd to use the camera for a profile picture."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

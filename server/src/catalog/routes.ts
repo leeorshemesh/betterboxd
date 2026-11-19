@@ -8,6 +8,7 @@ import {
   catalogListGenres,
   catalogProviderStatus,
   catalogSearch,
+  catalogSeasonEpisodes,
   catalogSimilar,
 } from './service.js';
 
@@ -51,6 +52,17 @@ catalogRoutes.get('/:type/:id/similar', async (c) => {
   parseMediaType(c.req.param('type'));
   const id = decodeURIComponent(c.req.param('id'));
   return c.json({ results: await catalogSimilar(id) });
+});
+
+catalogRoutes.get('/:type/:id/seasons/:season', async (c) => {
+  requireUser(c);
+  parseMediaType(c.req.param('type'));
+  const id = decodeURIComponent(c.req.param('id'));
+  const season = Number(c.req.param('season'));
+  if (!Number.isFinite(season) || season < 1) throw new HttpError(400, 'Invalid season');
+  const result = await catalogSeasonEpisodes(id, season);
+  if (!result) throw new HttpError(404, 'Season not found');
+  return c.json(result);
 });
 
 catalogRoutes.get('/:type/:id', async (c) => {

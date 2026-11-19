@@ -72,13 +72,15 @@ interface AppStateValue {
   lists: MediaList[];
   topFive: TopFiveConfig;
   setTopFiveMode: (mode: TopFiveMode) => void;
-  setTopFiveSlots: (mode: TopFiveMode, slots: TopFiveConfig['slots']) => Promise<void>;
+  setTopFiveSlots: (mode: TopFiveMode, slots: TopFiveConfig['slotsByMode'][TopFiveMode]) => Promise<void>;
   logTitle: (input: NewLogInput) => Promise<{ entry: DiaryEntry; review: Review | null }>;
   deleteDiary: (entryId: string) => Promise<void>;
   addComment: (reviewId: string, body: string) => Promise<Comment>;
   addToList: (media: MediaItem) => Promise<{ list: MediaList; added: boolean }>;
   removeFromList: (mediaId: string) => Promise<void>;
   updateProfile: (patch: { displayName?: string; bio?: string; isPublic?: boolean }) => Promise<void>;
+  uploadAvatar: (form: FormData) => Promise<void>;
+  removeAvatar: () => Promise<void>;
   searchUsers: (query: string) => Promise<UserSearchHit[]>;
   sendFriendRequest: (username: string) => Promise<void>;
   acceptFriendRequest: (id: string) => Promise<void>;
@@ -141,7 +143,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [lists, setLists] = useState<MediaList[]>([]);
-  const [topFive, setTopFive] = useState<TopFiveConfig>({ mode: 'mixed', slots: [] });
+  const [topFive, setTopFive] = useState<TopFiveConfig>({
+    mode: 'mixed',
+    slotsByMode: { mixed: [], movie: [], show: [], book: [], music: [] },
+  });
   const [activities, setActivities] = useState<FeedActivity[]>([]);
   const [directory, setDirectory] = useState<User[]>([]);
 
@@ -208,6 +213,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     applyAccount(await api<AccountPayload>('/auth/me'));
   }, [applyAccount]);
 
+  const reloadFeed = useCallback(async () => {
+    const feedPayload = await api<FeedPayload>('/feed');
+    cacheMediaItems(
+      feedPayload.reviews
+        .map((review) => review.media)
+        .filter((media): media is MediaItem => Boolean(media)),
+    );
+    setReviews((prev) => mergeById(prev, feedPayload.reviews));
+    setComments((prev) => mergeById(prev, feedPayload.comments));
+    setActivities(feedPayload.activities);
+    setDirectory((prev) =>
+      rememberUsers(prev, [
+        ...feedPayload.reviews.map((review) => review.author),
+        ...feedPayload.comments.map((comment) => comment.author),
+      ]),
+    );
+  }, []);
+
   const setTopFiveMode = useCallback((mode: TopFiveMode) => {
     setTopFive((prev) => ({ ...prev, mode }));
     void api<{ topFive: TopFiveConfig }>('/top-five', { method: 'PATCH', body: { mode } })
@@ -215,13 +238,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined);
   }, []);
 
-  const setTopFiveSlots = useCallback(async (mode: TopFiveMode, slots: TopFiveConfig['slots']) => {
-    const result = await api<{ topFive: TopFiveConfig }>('/top-five', {
-      method: 'PATCH',
-      body: { mode, slots },
-    });
-    setTopFive(result.topFive);
-  }, []);
+  const setTopFiveSlots = useCallback(
+    async (mode: TopFiveMode, slots: TopFiveConfig['slotsByMode'][TopFiveMode]) => {
+      const result = await api<{ topFive: TopFiveConfig }>('/top-five', {
+        method: 'PATCH',
+        body: { mode, slots },
+      });
+      setTopFive(result.topFive);
+    },
+    [],
+  );
 
   const logTitle = useCallback(async (input: NewLogInput) => {
     const body = input.body?.trim();
@@ -302,6 +328,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [applyAccount],
   );
 
+  const uploadAvatar = useCallback(
+    async (form: FormData) => {
+      applyAccount(
+        await api<AccountPayload>('/users/me/avatar', {
+          method: 'POST',
+          body: form,
+          formData: true,
+        }),
+      );
+    },
+    [applyAccount],
+  );
+
+  const removeAvatar = useCallback(async () => {
+    applyAccount(await api<AccountPayload>('/users/me/avatar', { method: 'DELETE' }));
+  }, [applyAccount]);
+
   const searchUsers = useCallback(async (query: string) => {
     const result = await api<{ results: UserSearchHit[] }>(
       `/users/search?q=${encodeURIComponent(query)}`,
@@ -322,8 +365,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       await api(`/friends/requests/${id}/accept`, { method: 'POST' });
       await reloadAccount();
+      await reloadFeed();
     },
-    [reloadAccount],
+    [reloadAccount, reloadFeed],
   );
 
   const declineFriendRequest = useCallback(
@@ -338,8 +382,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     async (userId: string) => {
       await api(`/friends/${userId}`, { method: 'DELETE' });
       await reloadAccount();
+      await reloadFeed();
     },
-    [reloadAccount],
+    [reloadAccount, reloadFeed],
   );
 
   const loadReview = useCallback(async (id: string) => {
@@ -435,6 +480,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       addToList,
       removeFromList,
       updateProfile,
+      uploadAvatar,
+      removeAvatar,
       searchUsers,
       sendFriendRequest,
       acceptFriendRequest,
@@ -468,6 +515,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     addToList,
     removeFromList,
     updateProfile,
+    uploadAvatar,
+    removeAvatar,
     searchUsers,
     sendFriendRequest,
     acceptFriendRequest,

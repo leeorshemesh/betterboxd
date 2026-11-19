@@ -17,6 +17,10 @@ export interface MediaItem {
   /** Shows only */
   seasons?: number;
   episodesPerSeason?: number;
+  /** Per-season episode counts keyed by season number (stringified). */
+  episodesBySeason?: Record<string, number>;
+  /** Optional popularity signal from provider (higher = more popular). */
+  popularity?: number;
   /** Music only */
   artist?: string;
   album?: string;
@@ -29,6 +33,7 @@ export interface User {
   displayName: string;
   avatarColor: string;
   avatarInitials: string;
+  avatarUrl?: string | null;
   bio?: string;
   isPublic: boolean;
   friendIds: string[];
@@ -117,8 +122,8 @@ export interface TopFiveSlot {
 
 export interface TopFiveConfig {
   mode: TopFiveMode;
-  /** When mode is mixed: one per type. When typed: up to five of that type. */
-  slots: TopFiveSlot[];
+  /** Independent curated lists per mode. Mixed is its own top five. */
+  slotsByMode: Record<TopFiveMode, TopFiveSlot[]>;
 }
 
 export type FeedActivityKind = 'review' | 'comment';

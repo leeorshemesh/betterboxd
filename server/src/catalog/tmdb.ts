@@ -14,11 +14,13 @@ type TmdbMovie = {
   poster_path?: string | null;
   genre_ids?: number[];
   genres?: { id: number; name: string }[];
+  popularity?: number;
 };
 
 type TmdbTvDetail = TmdbMovie & {
   number_of_seasons?: number;
   number_of_episodes?: number;
+  seasons?: Array<{ season_number: number; episode_count: number }>;
 };
 
 const GENRE_MOVIE: Record<number, string> = {
@@ -104,6 +106,7 @@ function toMediaItem(row: TmdbMovie, kind: 'movie' | 'show', extra?: Partial<Med
     genres: mapGenres(row.genre_ids, kind, row.genres),
     artColor: artColorFromId(id),
     imageUrl: row.poster_path ? `${IMG}${row.poster_path}` : undefined,
+    popularity: typeof row.popularity === 'number' ? row.popularity : undefined,
     ...extra,
   };
 }
@@ -250,12 +253,50 @@ export async function tmdbGetById(id: string): Promise<MediaItem | null> {
   }
 
   const row = await tmdbFetch<TmdbTvDetail>(`/tv/${parsed.tmdbId}`);
-  const seasons = row.number_of_seasons;
-  const episodes =
-    seasons && row.number_of_episodes
-      ? Math.max(1, Math.round(row.number_of_episodes / seasons))
-      : undefined;
-  return toMediaItem(row, 'show', { seasons, episodesPerSeason: episodes });
+  const seasonRows = (row.seasons ?? []).filter((s) => s.season_number > 0);
+  const seasons =
+    seasonRows.length > 0
+      ? Math.max(...seasonRows.map((s) => s.season_number))
+      : row.number_of_seasons;
+  const episodesBySeason: Record<string, number> = {};
+  for (const s of seasonRows) {
+    if (s.episode_count > 0) episodesBySeason[String(s.season_number)] = s.episode_count;
+  }
+  const episodeValues = Object.values(episodesBySeason);
+  const episodesPerSeason =
+    episodeValues.length > 0
+      ? Math.max(1, Math.round(episodeValues.reduce((a, b) => a + b, 0) / episodeValues.length))
+      : seasons && row.number_of_episodes
+        ? Math.max(1, Math.round(row.number_of_episodes / seasons))
+        : undefined;
+  return toMediaItem(row, 'show', {
+    seasons,
+    episodesPerSeason,
+    episodesBySeason: Object.keys(episodesBySeason).length > 0 ? episodesBySeason : undefined,
+  });
+}
+
+export async function tmdbSeasonEpisodeCount(
+  id: string,
+  season: number,
+): Promise<number | null> {
+  const parsed = parseTmdbId(id);
+  if (!parsed || parsed.kind !== 'show' || !isTmdbConfigured()) return null;
+  if (!Number.isFinite(season) || season < 1) return null;
+  try {
+    const data = await tmdbFetch<{ episodes?: unknown[]; episode_count?: number }>(
+      `/tv/${parsed.tmdbId}/season/${season}`,
+    );
+    if (typeof data.episode_count === 'number' && data.episode_count > 0) {
+      return data.episode_count;
+    }
+    if (Array.isArray(data.episodes) && data.episodes.length > 0) {
+      return data.episodes.length;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function tmdbListGenres(): Promise<string[]> {

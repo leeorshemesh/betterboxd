@@ -13,21 +13,36 @@ interface TopFiveProps {
   config: TopFiveConfig;
   onModeChange: (mode: TopFiveMode) => void;
   diary?: DiaryEntry[];
+  onEdit?: () => void;
+  editing?: boolean;
 }
 
-/** Profile showcase — mode chips filter what’s shown. Edit picks in Settings. */
-export function TopFive({ config, onModeChange, diary = [] }: TopFiveProps) {
+/** Profile showcase — mode chips filter what’s shown. */
+export function TopFive({
+  config,
+  onModeChange,
+  diary = [],
+  onEdit,
+  editing = false,
+}: TopFiveProps) {
   const visible = slotsForMode(config, diary);
 
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <Text style={styles.heading}>Top Five</Text>
-        <Text style={styles.hint}>
-          {config.mode === 'mixed'
-            ? 'One of each type · edit in Settings'
-            : `Top ${MEDIA_TYPE_LABELS[config.mode]} · edit in Settings`}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.heading}>Top Five</Text>
+          <Text style={styles.hint}>
+            {config.mode === 'mixed'
+              ? 'All-time entertainment picks'
+              : `Top ${MEDIA_TYPE_LABELS[config.mode]}`}
+          </Text>
+        </View>
+        {onEdit ? (
+          <Pressable onPress={onEdit} style={styles.editBtn} hitSlop={8}>
+            <Text style={styles.editText}>{editing ? 'Done' : 'Edit'}</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <ScrollView
@@ -81,7 +96,7 @@ export function TopFive({ config, onModeChange, diary = [] }: TopFiveProps) {
 
       {visible.length === 0 ? (
         <Text style={styles.empty}>
-          Nothing pinned for this view yet. Open Settings → Top Five to add favorites from your
+          Nothing pinned for this view yet. Tap Edit next to Top Five to add favorites from your
           diary.
         </Text>
       ) : null}
@@ -98,6 +113,9 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
   },
   heading: {
     ...typography.title,
@@ -107,6 +125,18 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textMuted,
     marginTop: 2,
+  },
+  editBtn: {
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentDim,
+    borderRadius: radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  editText: {
+    ...typography.label,
+    color: colors.accent,
   },
   modeRow: {
     paddingHorizontal: spacing.lg,

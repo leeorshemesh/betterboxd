@@ -1,6 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
+import {
+  assertAvatarUpload,
+  AVATAR_DIR,
+  removeAvatarFiles,
+  saveAvatarFile,
+} from './avatars.js';
 import { catalogRoutes } from './catalog/routes.js';
 import { corsOrigins } from './env.js';
 import { HttpError, nowPlusDays } from './http.js';
@@ -142,6 +151,53 @@ app.patch('/users/me', async (c) => {
   if (Object.keys(patch).length === 0) throw new HttpError(400, 'Nothing to update');
   repo.updateUser(userId, patch);
   return c.json(repo.accountPayload(userId));
+});
+
+app.post('/users/me/avatar', async (c) => {
+  const userId = requireUser(c);
+  const form = await c.req.parseBody();
+  const file = form.file;
+  if (!file || typeof file === 'string') {
+    throw new HttpError(400, 'Choose a photo to upload');
+  }
+  const mime = file.type || 'application/octet-stream';
+  const buffer = Buffer.from(await file.arrayBuffer());
+  let ext: string;
+  try {
+    ext = assertAvatarUpload(mime, buffer.byteLength);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : 'Invalid image');
+  }
+  const avatarUrl = saveAvatarFile(userId, ext, buffer);
+  repo.setUserAvatarUrl(userId, avatarUrl);
+  return c.json(repo.accountPayload(userId));
+});
+
+app.delete('/users/me/avatar', (c) => {
+  const userId = requireUser(c);
+  removeAvatarFiles(userId);
+  repo.setUserAvatarUrl(userId, null);
+  return c.json(repo.accountPayload(userId));
+});
+
+app.get('/uploads/avatars/:name', (c) => {
+  const name = c.req.param('name');
+  if (!/^[a-zA-Z0-9_-]+\.(jpg|png|webp)$/.test(name)) {
+    throw new HttpError(404, 'Not found');
+  }
+  const path = join(AVATAR_DIR, name);
+  try {
+    const bytes = readFileSync(path);
+    const ext = name.split('.').pop();
+    const type =
+      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    return c.body(bytes, 200, {
+      'Content-Type': type,
+      'Cache-Control': 'public, max-age=86400',
+    });
+  } catch {
+    throw new HttpError(404, 'Not found');
+  }
 });
 
 app.get('/users/search', (c) => {

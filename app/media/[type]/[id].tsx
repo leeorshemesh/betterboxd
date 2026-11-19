@@ -1,7 +1,8 @@
-import { Link, Stack, useLocalSearchParams, type Href } from 'expo-router';
+import { Link, Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,14 +21,26 @@ import type { MediaItem } from '@/types';
 import { formatDayLabel } from '@/utils/format';
 
 export default function MediaDetailScreen() {
-  const params = useLocalSearchParams<{ type: string; id: string }>();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ type: string; id: string; diaryEntryId?: string }>();
   const type = Array.isArray(params.type) ? params.type[0] : params.type;
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { getPublicReviewsForMedia, addToList, removeFromList, lists, loadMediaReviews } =
-    useAppState();
+  const diaryEntryId = Array.isArray(params.diaryEntryId)
+    ? params.diaryEntryId[0]
+    : params.diaryEntryId;
+  const {
+    diary,
+    getPublicReviewsForMedia,
+    addToList,
+    removeFromList,
+    lists,
+    loadMediaReviews,
+    deleteDiary,
+  } = useAppState();
   const [media, setMedia] = useState<MediaItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -73,6 +86,28 @@ export default function MediaDetailScreen() {
     media.type === 'book' ? 'to-read' : media.type === 'music' ? 'to-listen' : 'to-watch';
   const list = lists.find((l) => l.kind === listKind);
   const alreadyInList = list?.mediaIds.includes(media.id) ?? false;
+  const ownEntry =
+    diaryEntryId && diary.some((entry) => entry.id === diaryEntryId) ? diaryEntryId : undefined;
+
+  const onDeleteLog = () => {
+    if (!ownEntry || deleting) return;
+    Alert.alert('Delete log', `Remove “${media.title}” from your diary?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setDeleting(true);
+          void deleteDiary(ownEntry)
+            .then(() => router.back())
+            .catch((error: unknown) => {
+              setToast(error instanceof ApiError ? error.message : 'Could not delete');
+              setDeleting(false);
+            });
+        },
+      },
+    ]);
+  };
 
   const onToggleList = () => {
     const action = alreadyInList
@@ -117,6 +152,11 @@ export default function MediaDetailScreen() {
               : `Add to ${list?.name ?? 'list'}`}
           </Text>
         </Pressable>
+        {ownEntry ? (
+          <Pressable onPress={onDeleteLog} style={styles.deleteBtn} disabled={deleting}>
+            <Text style={styles.deleteText}>{deleting ? 'Deleting…' : 'Delete from diary'}</Text>
+          </Pressable>
+        ) : null}
         {toast ? <Text style={styles.toast}>{toast}</Text> : null}
 
         <Text style={styles.section}>Reviews · {reviews.length}</Text>
@@ -191,6 +231,15 @@ const styles = StyleSheet.create({
   },
   listBtnText: { ...typography.bodyBold, color: colors.accent },
   listBtnTextDone: { color: colors.textSecondary },
+  deleteBtn: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    paddingVertical: 4,
+  },
+  deleteText: {
+    ...typography.label,
+    color: colors.coral,
+  },
   toast: {
     ...typography.caption,
     color: colors.teal,

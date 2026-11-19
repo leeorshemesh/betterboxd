@@ -29,7 +29,10 @@ export function TimelineRow({ entry, review, isFirst, isLast, onDelete }: Timeli
   const href = (
     review || entry.reviewId
       ? `/review/${review?.id ?? entry.reviewId}`
-      : `/media/${media.type}/${media.id}`
+      : {
+          pathname: `/media/${media.type}/${media.id}`,
+          params: { diaryEntryId: entry.id },
+        }
   ) as Href;
 
   const confirmDelete = () => {

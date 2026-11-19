@@ -1,7 +1,8 @@
-import { useLocalSearchParams, Link, Stack } from 'expo-router';
+import { useLocalSearchParams, Link, Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,12 +21,22 @@ import { getMediaSync } from '@/services/mediaService';
 import { formatDayLabel, mediaTargetLabel } from '@/utils/format';
 
 export default function ReviewDetailScreen() {
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const reviewId = Array.isArray(id) ? id[0] : id;
-  const { getReview, getCommentsForReview, addComment, loadReview, getUser } = useAppState();
+  const {
+    currentUser,
+    getReview,
+    getCommentsForReview,
+    addComment,
+    loadReview,
+    getUser,
+    deleteDiary,
+  } = useAppState();
   const [reply, setReply] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!reviewId) return;
@@ -66,6 +77,7 @@ export default function ReviewDetailScreen() {
   const media = review.media ?? getMediaSync(review.target.mediaId);
   const comments = getCommentsForReview(review.id);
   const target = media ? mediaTargetLabel(media, review.target) : '';
+  const isOwner = review.userId === currentUser.id && Boolean(review.diaryEntryId);
 
   const onReply = () => {
     const body = reply.trim();
@@ -75,6 +87,26 @@ export default function ReviewDetailScreen() {
     });
   };
 
+  const onDelete = () => {
+    if (!review.diaryEntryId || deleting) return;
+    Alert.alert('Delete log', `Remove “${media?.title ?? 'this title'}” from your diary?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          setDeleting(true);
+          void deleteDiary(review.diaryEntryId!)
+            .then(() => router.back())
+            .catch((err: unknown) => {
+              setError(err instanceof ApiError ? err.message : 'Could not delete');
+              setDeleting(false);
+            });
+        },
+      },
+    ]);
+  };
+
   return (
     <>
       <Stack.Screen options={{ title: media?.title ?? 'Review' }} />
@@ -82,13 +114,18 @@ export default function ReviewDetailScreen() {
         {user && (
           <View style={styles.author}>
             <Avatar user={user} size={44} />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.authorName}>{user.displayName}</Text>
               <Text style={styles.date}>{formatDayLabel(review.loggedOn ?? review.createdAt, true)}</Text>
               {!user.isPublic && (
                 <Text style={styles.privacy}>Private profile — comments are visible to friends.</Text>
               )}
             </View>
+            {isOwner ? (
+              <Pressable onPress={onDelete} hitSlop={8} disabled={deleting}>
+                <Text style={styles.delete}>{deleting ? 'Deleting…' : 'Delete'}</Text>
+              </Pressable>
+            ) : null}
           </View>
         )}
 
@@ -175,6 +212,7 @@ const styles = StyleSheet.create({
   authorName: { ...typography.headline, color: colors.text },
   date: { ...typography.caption, color: colors.textMuted },
   privacy: { ...typography.caption, color: colors.amber, marginTop: 4 },
+  delete: { ...typography.label, color: colors.coral },
   mediaRow: {
     flexDirection: 'row',
     gap: spacing.md,

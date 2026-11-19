@@ -4,6 +4,7 @@ import {
   searchCatalog,
 } from './mockCatalog.js';
 import { openLibraryGetById, openLibrarySearch } from './openLibrary.js';
+import { rankAndDedupe, rankAndInterleaveByType } from './rank.js';
 import {
   isSpotifyConfigured,
   spotifyGetById,
@@ -15,6 +16,7 @@ import {
   tmdbGetById,
   tmdbListGenres,
   tmdbSearch,
+  tmdbSeasonEpisodeCount,
   tmdbSimilar,
 } from './tmdb.js';
 import type { MediaItem, MediaType } from './types.js';
@@ -25,43 +27,12 @@ export interface CatalogSearchOptions {
   genre?: string;
 }
 
+export { rankAndDedupe } from './rank.js';
+
 function applyGenreFilter(items: MediaItem[], genre?: string): MediaItem[] {
   if (!genre) return items;
   const g = genre.toLowerCase();
   return items.filter((m) => m.genres.some((x) => x.toLowerCase().includes(g)));
-}
-
-export function rankAndDedupe(items: MediaItem[], query = ''): MediaItem[] {
-  const q = query.trim().toLowerCase();
-  const seen = new Set<string>();
-  const unique: MediaItem[] = [];
-  for (const item of items) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    unique.push(item);
-  }
-
-  const score = (item: MediaItem): number => {
-    let s = 0;
-    const title = item.title.toLowerCase();
-    if (q) {
-      if (title === q) s += 100;
-      else if (title.startsWith(q)) s += 60;
-      else if (title.includes(q)) s += 30;
-      if (item.subtitle?.toLowerCase().includes(q)) s += 10;
-      if (item.artist?.toLowerCase().includes(q)) s += 10;
-    }
-    if (item.imageUrl) s += 8;
-    if (item.year) s += 2;
-    if (item.genres.length > 0) s += 1;
-    return s;
-  };
-
-  return unique.sort((a, b) => {
-    const diff = score(b) - score(a);
-    if (diff !== 0) return diff;
-    return a.title.localeCompare(b.title);
-  });
 }
 
 async function searchMoviesShows(
@@ -119,7 +90,7 @@ export async function catalogSearch(options: CatalogSearchOptions): Promise<Medi
       searchBooks(query, genre),
       searchMusic(query, genre),
     ]);
-    results = [...film, ...books, ...music];
+    return rankAndInterleaveByType([...film, ...books, ...music], query);
   } else if (type === 'movie' || type === 'show') {
     results = await searchMoviesShows(query, type, genre);
   } else if (type === 'book') {
@@ -129,6 +100,15 @@ export async function catalogSearch(options: CatalogSearchOptions): Promise<Medi
   }
 
   return rankAndDedupe(results, query);
+}
+
+export async function catalogSeasonEpisodes(
+  id: string,
+  season: number,
+): Promise<{ episodeCount: number } | null> {
+  const count = await tmdbSeasonEpisodeCount(id, season);
+  if (count == null) return null;
+  return { episodeCount: count };
 }
 
 export async function catalogGetById(id: string): Promise<MediaItem | null> {

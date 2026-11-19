@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -11,11 +11,14 @@ import {
 import { Link, type Href } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { Avatar } from '@/components/Avatar';
+import { AvatarPicker } from '@/components/AvatarPicker';
 import { TimelineRow } from '@/components/TimelineRow';
 import { TopFive } from '@/components/TopFive';
+import { TopFiveEditor } from '@/components/TopFiveEditor';
 import { colors, radii, spacing, typography } from '@/constants/theme';
 import { useAppState } from '@/context/AppState';
+import { updatePreferences } from '@/services/preferences';
+import type { TopFiveMode } from '@/types';
 
 export default function ProfileScreen() {
   const listRef = useRef<FlatList>(null);
@@ -23,24 +26,35 @@ export default function ProfileScreen() {
     currentUser,
     friends,
     diary,
+    lists,
     topFive,
     setTopFiveMode,
+    setTopFiveSlots,
     getReview,
     getUserComments,
-    deleteDiary,
   } = useAppState();
+  const [editingTopFive, setEditingTopFive] = useState(false);
 
   const myComments = getUserComments(currentUser.id);
   const reviewCount = diary.filter((entry) => entry.reviewId).length;
 
   const scrollToTop = () => listRef.current?.scrollToOffset({ offset: 0, animated: true });
-  const scrollToBottom = () =>
-    listRef.current?.scrollToEnd({ animated: true });
+  const scrollToBottom = () => listRef.current?.scrollToEnd({ animated: true });
+
+  const onTopFiveMode = (mode: TopFiveMode) => {
+    setTopFiveMode(mode);
+    void updatePreferences({ topFiveMode: mode });
+  };
+
+  const onTopFiveSave = async (mode: TopFiveMode, slots: typeof topFive.slotsByMode.mixed) => {
+    await setTopFiveSlots(mode, slots);
+    void updatePreferences({ topFiveMode: mode });
+  };
 
   const Header = (
     <View>
       <View style={styles.header}>
-        <Avatar user={currentUser} size={72} />
+        <AvatarPicker size={72} showHint={false} />
         <View style={styles.headerMeta}>
           <View style={styles.nameRow}>
             <Text style={styles.displayName}>{currentUser.displayName}</Text>
@@ -59,12 +73,6 @@ export default function ProfileScreen() {
                 <Text style={styles.statLabel}>Friends</Text>
               </Pressable>
             </Link>
-            <Link href={'/lists' as Href} asChild>
-              <Pressable style={styles.stat}>
-                <Text style={styles.statNum}>Lists</Text>
-                <Text style={styles.statLabel}>Queues</Text>
-              </Pressable>
-            </Link>
             <Link href="/my-comments" asChild>
               <Pressable style={styles.stat}>
                 <Text style={styles.statNum}>{myComments.length}</Text>
@@ -79,7 +87,36 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      <TopFive config={topFive} onModeChange={setTopFiveMode} diary={diary} />
+      <TopFive
+        config={topFive}
+        onModeChange={onTopFiveMode}
+        diary={diary}
+        editing={editingTopFive}
+        onEdit={() => setEditingTopFive((value) => !value)}
+      />
+      {editingTopFive ? (
+        <View style={styles.editorWrap}>
+          <TopFiveEditor
+            config={topFive}
+            diary={diary}
+            onModeChange={onTopFiveMode}
+            onSave={onTopFiveSave}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.queues}>
+        <Text style={styles.queuesTitle}>Queues</Text>
+        <Text style={styles.queuesHint}>Lists of titles you still want to get to.</Text>
+        {lists.map((list) => (
+          <Link key={list.id} href={'/lists' as Href} asChild>
+            <Pressable style={styles.queueRow}>
+              <Text style={styles.queueName}>{list.name}</Text>
+              <Text style={styles.queueCount}>{list.mediaIds.length}</Text>
+            </Pressable>
+          </Link>
+        ))}
+      </View>
 
       <View style={styles.timelineHeader}>
         <Text style={styles.timelineTitle}>Timeline</Text>
@@ -105,7 +142,6 @@ export default function ProfileScreen() {
             review={item.reviewId ? getReview(item.reviewId) : undefined}
             isFirst={index === 0}
             isLast={index === diary.length - 1}
-            onDelete={(entryId) => void deleteDiary(entryId)}
           />
         )}
         ListEmptyComponent={
@@ -180,6 +216,45 @@ const styles = StyleSheet.create({
   statLabel: {
     ...typography.caption,
     color: colors.textMuted,
+  },
+  editorWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  queues: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  queuesTitle: {
+    ...typography.title,
+    color: colors.text,
+  },
+  queuesHint: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 2,
+    marginBottom: spacing.sm,
+  },
+  queueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderSubtle,
+  },
+  queueName: {
+    ...typography.headline,
+    color: colors.text,
+  },
+  queueCount: {
+    ...typography.label,
+    color: colors.accent,
   },
   timelineHeader: {
     paddingHorizontal: spacing.lg,

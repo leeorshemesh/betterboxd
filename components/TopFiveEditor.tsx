@@ -4,11 +4,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MediaArt } from '@/components/MediaArt';
 import { MediaTypeIcon, labelForMediaFilter } from '@/components/MediaTypeIcon';
 import { colors, radii, spacing, typography, MEDIA_TYPE_LABELS } from '@/constants/theme';
-import type { DiaryEntry, TopFiveConfig, TopFiveMode } from '@/types';
+import type { DiaryEntry, TopFiveConfig, TopFiveMode, TopFiveSlot } from '@/types';
 import {
   candidatesForMode,
-  mergeSlotsForMode,
   slotsForMode,
+  slotsForModeSave,
 } from '@/utils/topFive';
 
 const MODES: TopFiveMode[] = ['mixed', 'movie', 'show', 'book', 'music'];
@@ -17,7 +17,7 @@ interface TopFiveEditorProps {
   config: TopFiveConfig;
   diary: DiaryEntry[];
   onModeChange: (mode: TopFiveMode) => void;
-  onSave: (mode: TopFiveMode, slots: TopFiveConfig['slots']) => Promise<void>;
+  onSave: (mode: TopFiveMode, slots: TopFiveSlot[]) => Promise<void>;
 }
 
 export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEditorProps) {
@@ -28,8 +28,8 @@ export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEd
 
   const pool = useMemo(() => candidatesForMode(diary, mode), [diary, mode]);
   const visible = useMemo(
-    () => slotsForMode({ mode, slots: config.slots }, diary),
-    [config.slots, mode, diary],
+    () => slotsForMode({ ...config, mode }, diary),
+    [config, mode, diary],
   );
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEd
   useEffect(() => {
     setDraft(visible.map((slot) => slot.mediaId));
     setMessage(null);
-  }, [mode, config.slots]);
+  }, [mode, config.slotsByMode]);
 
   const selectMode = (next: TopFiveMode) => {
     setMode(next);
@@ -49,15 +49,7 @@ export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEd
   const toggle = (mediaId: string) => {
     setDraft((prev) => {
       if (prev.includes(mediaId)) return prev.filter((id) => id !== mediaId);
-      const max = mode === 'mixed' ? 4 : 5;
-      if (prev.length >= max) return prev;
-      if (mode === 'mixed') {
-        const media = pool.find((item) => item.id === mediaId);
-        if (!media) return prev;
-        if (prev.some((id) => pool.find((item) => item.id === id)?.type === media.type)) {
-          return prev;
-        }
-      }
+      if (prev.length >= 5) return prev;
       return [...prev, mediaId];
     });
     setMessage(null);
@@ -72,8 +64,7 @@ export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEd
     setSaving(true);
     setMessage(null);
     try {
-      const merged = mergeSlotsForMode(config.slots, mode, draft, diary);
-      await onSave(mode, merged);
+      await onSave(mode, slotsForModeSave(draft));
       setMessage('Top Five saved');
     } catch {
       setMessage('Could not save Top Five');
@@ -85,8 +76,8 @@ export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEd
   return (
     <View style={styles.wrap}>
       <Text style={styles.hint}>
-        Choose a view, then tap diary titles to add or remove. Mixed allows one of each type;
-        other views allow up to five.
+        Each view is its own list of up to five. Mixed is your all-time entertainment top five — not
+        a merge of the others.
       </Text>
 
       <ScrollView
@@ -113,8 +104,7 @@ export function TopFiveEditor({ config, diary, onModeChange, onSave }: TopFiveEd
       </ScrollView>
 
       <Text style={styles.subLabel}>
-        {mode === 'mixed' ? 'Mixed showcase' : `Top ${MEDIA_TYPE_LABELS[mode]}`} · {draft.length}/
-        {mode === 'mixed' ? 4 : 5}
+        {mode === 'mixed' ? 'All-time mixed' : `Top ${MEDIA_TYPE_LABELS[mode]}`} · {draft.length}/5
       </Text>
 
       {draft.length > 0 ? (

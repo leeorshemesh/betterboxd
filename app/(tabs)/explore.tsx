@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, type Href } from 'expo-router';
 
 import { FilterChips } from '@/components/FilterChips';
 import { MediaArt } from '@/components/MediaArt';
@@ -229,23 +229,38 @@ export default function ExploreScreen() {
           contentContainerStyle={styles.list}
           ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
           renderItem={({ item }) => (
-            <Link href={`/media/${item.type}/${item.id}`} asChild>
-              <Pressable style={styles.row}>
-                <MediaArt media={item} size={56} />
-                <View style={styles.meta}>
-                  <Text style={styles.title} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <Text style={styles.sub} numberOfLines={1}>
-                    {item.subtitle}
-                    {item.year ? ` · ${item.year}` : ''}
-                  </Text>
-                  <Text style={styles.genresLine} numberOfLines={1}>
-                    {item.genres.join(' · ')}
-                  </Text>
-                </View>
-              </Pressable>
-            </Link>
+            <View style={styles.row}>
+              <Link href={`/media/${item.type}/${item.id}`} asChild>
+                <Pressable style={styles.rowMain}>
+                  <MediaArt media={item} size={56} />
+                  <View style={styles.meta}>
+                    <Text style={styles.title} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.sub} numberOfLines={1}>
+                      {item.subtitle}
+                      {item.year ? ` · ${item.year}` : ''}
+                    </Text>
+                    <Text style={styles.genresLine} numberOfLines={1}>
+                      {item.genres.join(' · ')}
+                    </Text>
+                  </View>
+                </Pressable>
+              </Link>
+              <Link
+                href={
+                  {
+                    pathname: '/(tabs)/add',
+                    params: { mediaId: item.id, type: item.type },
+                  } as Href
+                }
+                asChild
+              >
+                <Pressable style={styles.addBtn} hitSlop={6}>
+                  <Text style={styles.addBtnText}>Add</Text>
+                </Pressable>
+              </Link>
+            </View>
           )}
         />
       )}
@@ -387,16 +402,35 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    gap: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  rowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
+  },
   meta: {
     flex: 1,
     justifyContent: 'center',
     gap: 2,
+  },
+  addBtn: {
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentDim,
+    borderRadius: radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  addBtnText: {
+    ...typography.label,
+    color: colors.accent,
   },
   title: {
     ...typography.headline,
